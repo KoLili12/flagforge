@@ -24,3 +24,10 @@ Feature flags & A/B testing platform written in Scala 3 on the Typelevel stack.
 sbt compile
 sbt test
 ```
+
+## Local infrastructure
+
+```bash
+docker compose up -d                  # Postgres only
+docker compose --profile full up -d   # + Redis, Kafka (KRaft), Kafka UI on :8090
+```
