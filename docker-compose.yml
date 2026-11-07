@@ -4,6 +4,7 @@
 #   docker compose --profile infra up -d       + Kafka (KRaft), Redis, Kafka UI (:8090): run services from sbt
 #   docker compose --profile apps up -d        the whole system in containers, with observability
 #   docker compose --profile observability up -d   only Grafana (:3000), Prometheus (:9090), Tempo, OTel collector
+#   docker compose --profile apps --profile demo up -d   + simulated users running an A/B test (USERS_PER_SECOND)
 #
 # Service images are built with: sbt Docker/publishLocal
 # Host ports can be overridden: POSTGRES_PORT, REDIS_PORT.
@@ -159,6 +160,23 @@ services:
     healthcheck:
       <<: *http-health
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8082 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]
+
+  # ---------------------------------------------------------------- demo traffic
+
+  simulator:
+    image: flagforge/simulator:latest
+    profiles: [demo]
+    depends_on:
+      admin-api: { condition: service_healthy }
+      flag-delivery: { condition: service_healthy }
+      event-ingest: { condition: service_healthy }
+      stats-engine: { condition: service_healthy }
+    environment:
+      ADMIN_URL: http://admin-api:8080
+      DELIVERY_URL: http://flag-delivery:8081
+      INGEST_URL: http://event-ingest:8083
+      STATS_URL: http://stats-engine:8082
+      USERS_PER_SECOND: ${USERS_PER_SECOND:-25}
 
   # ---------------------------------------------------------------- observability
 

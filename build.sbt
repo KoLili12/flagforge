@@ -58,6 +58,7 @@ lazy val root = project
     eventIngest,
     statsEngine,
     sdk,
+    simulator,
     itTests
   )
   .settings(
@@ -223,6 +224,22 @@ lazy val sdk = project
       "org.http4s"    %% "http4s-dsl"          % V.http4s          % Test,
       "org.http4s"    %% "http4s-ember-server" % V.http4s          % Test,
       "ch.qos.logback" % "logback-classic"     % V.logback         % Test
+    )
+  )
+
+/** Demo traffic: sets up an experiment through the admin API and simulates users through the real SDK. */
+lazy val simulator = project
+  .in(file("modules/simulator"))
+  .dependsOn(sdk)
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
+  .settings(serviceSettings, dockerSettings(9000))
+  .settings(
+    name                := "flagforge-simulator",
+    Compile / mainClass := Some("flagforge.simulator.Main"),
+    dockerExposedPorts  := Nil,
+    libraryDependencies ++= Seq(
+      "org.http4s" %% "http4s-ember-client" % V.http4s,
+      "org.http4s" %% "http4s-circe"        % V.http4s
     )
   )
 
