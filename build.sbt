@@ -33,9 +33,13 @@ lazy val root = project
     domain.js,
     evalCore.jvm,
     evalCore.js,
+    statsCore.jvm,
+    statsCore.js,
     messaging,
     adminApi,
     flagDelivery,
+    eventIngest,
+    statsEngine,
     sdk,
     itTests
   )
@@ -66,6 +70,16 @@ lazy val evalCore = crossProject(JVMPlatform, JSPlatform)
   .dependsOn(domain)
   .settings(testSettings)
   .settings(name := "flagforge-eval-core")
+
+/** Statistics for experiment analysis: z/t-tests, SRM, Bonferroni. Dependency-free maths, JVM + JS. */
+lazy val statsCore = crossProject(JVMPlatform, JSPlatform)
+  .crossType(CrossType.Pure)
+  .in(file("modules/stats-core"))
+  .settings(testSettings)
+  .settings(
+    name := "flagforge-stats-core",
+    libraryDependencies += "io.circe" %%% "circe-core" % V.circe
+  )
 
 /** Kafka plumbing for the change feed shared by the producer (admin-api) and consumers (flag-delivery). */
 lazy val messaging = project
@@ -120,6 +134,41 @@ lazy val flagDelivery = project
     )
   )
 
+/** Receives exposure and metric events from SDKs: rate limiting and deduplication in Redis, then Kafka. */
+lazy val eventIngest = project
+  .in(file("modules/event-ingest"))
+  .dependsOn(messaging)
+  .settings(testSettings, serviceSettings)
+  .settings(
+    name                := "flagforge-event-ingest",
+    Compile / mainClass := Some("flagforge.ingest.Main"),
+    libraryDependencies ++= Seq(
+      "org.http4s"     %% "http4s-ember-server" % V.http4s,
+      "org.http4s"     %% "http4s-dsl"          % V.http4s,
+      "org.http4s"     %% "http4s-circe"        % V.http4s,
+      "dev.profunktor" %% "redis4cats-effects"  % V.redis4cats
+    )
+  )
+
+/** Consumes exposures and metric events into Postgres and serves experiment reports. */
+lazy val statsEngine = project
+  .in(file("modules/stats-engine"))
+  .dependsOn(statsCore.jvm, messaging)
+  .settings(testSettings, serviceSettings)
+  .settings(
+    name                := "flagforge-stats-engine",
+    Compile / mainClass := Some("flagforge.statsengine.Main"),
+    libraryDependencies ++= Seq(
+      "org.http4s"    %% "http4s-ember-server"        % V.http4s,
+      "org.http4s"    %% "http4s-dsl"                 % V.http4s,
+      "org.http4s"    %% "http4s-circe"               % V.http4s,
+      "org.tpolecat"  %% "skunk-core"                 % V.skunk,
+      "org.flywaydb"   % "flyway-core"                % V.flyway,
+      "org.flywaydb"   % "flyway-database-postgresql" % V.flyway,
+      "org.postgresql" % "postgresql"                 % V.postgresql
+    )
+  )
+
 /** Scala SDK: keeps a live ruleset over SSE and evaluates flags locally. */
 lazy val sdk = project
   .in(file("modules/sdk"))
@@ -141,7 +190,7 @@ lazy val sdk = project
 /** End-to-end tests of the whole pipeline against real Postgres, Kafka and Redis. */
 lazy val itTests = project
   .in(file("modules/it-tests"))
-  .dependsOn(adminApi, flagDelivery, sdk)
+  .dependsOn(adminApi, flagDelivery, eventIngest, statsEngine, sdk)
   .settings(testSettings, serviceSettings)
   .settings(
     name           := "flagforge-it-tests",
