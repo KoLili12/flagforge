@@ -4,12 +4,28 @@ ThisBuild / scalaVersion               := "3.9.0"
 ThisBuild / organization               := "io.flagforge"
 ThisBuild / version                    := "0.1.0-SNAPSHOT"
 ThisBuild / tpolecatDefaultOptionsMode := DevMode
+// Docker images run on JRE 21; the build itself may use a newer JDK.
+ThisBuild / scalacOptions ++= Seq("-release", "21")
+ThisBuild / javacOptions ++= Seq("--release", "21")
 
 lazy val testSettings = Seq(
   libraryDependencies ++= Seq(
     "org.scalameta" %%% "munit"            % V.munit           % Test,
     "org.scalameta" %%% "munit-scalacheck" % V.munitScalacheck % Test
   )
+)
+
+/** Container image `flagforge/<service>:<version>` built with `sbt <project>/Docker/publishLocal`. */
+def dockerSettings(port: Int) = Seq(
+  dockerBaseImage      := "eclipse-temurin:21-jre",
+  Docker / packageName := s"flagforge/${name.value.stripPrefix("flagforge-")}",
+  dockerUpdateLatest   := true,
+  dockerExposedPorts   := Seq(port),
+  Docker / daemonUser  := "flagforge",
+  dockerEnvVars        := Map("JAVA_OPTS" -> "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"),
+  dockerLabels         := Map("org.opencontainers.image.source" -> "https://github.com/flagforge/flagforge"),
+  // Services are not libraries: skip scaladoc when packaging.
+  Compile / packageDoc / mappings := Seq.empty
 )
 
 /** Settings for runnable JVM services. */
@@ -98,7 +114,8 @@ lazy val messaging = project
 lazy val adminApi = project
   .in(file("modules/admin-api"))
   .dependsOn(evalCore.jvm, messaging)
-  .settings(testSettings, serviceSettings)
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
+  .settings(testSettings, serviceSettings, dockerSettings(8080))
   .settings(
     name                := "flagforge-admin-api",
     Compile / mainClass := Some("flagforge.admin.Main"),
@@ -122,7 +139,8 @@ lazy val adminApi = project
 lazy val flagDelivery = project
   .in(file("modules/flag-delivery"))
   .dependsOn(evalCore.jvm, messaging)
-  .settings(testSettings, serviceSettings)
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
+  .settings(testSettings, serviceSettings, dockerSettings(8081))
   .settings(
     name                := "flagforge-flag-delivery",
     Compile / mainClass := Some("flagforge.delivery.Main"),
@@ -138,7 +156,8 @@ lazy val flagDelivery = project
 lazy val eventIngest = project
   .in(file("modules/event-ingest"))
   .dependsOn(messaging)
-  .settings(testSettings, serviceSettings)
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
+  .settings(testSettings, serviceSettings, dockerSettings(8083))
   .settings(
     name                := "flagforge-event-ingest",
     Compile / mainClass := Some("flagforge.ingest.Main"),
@@ -155,7 +174,8 @@ lazy val eventIngest = project
 lazy val statsEngine = project
   .in(file("modules/stats-engine"))
   .dependsOn(statsCore.jvm, messaging)
-  .settings(testSettings, serviceSettings)
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
+  .settings(testSettings, serviceSettings, dockerSettings(8082))
   .settings(
     name                := "flagforge-stats-engine",
     Compile / mainClass := Some("flagforge.statsengine.Main"),

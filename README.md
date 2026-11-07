@@ -111,18 +111,28 @@ sbt scalafmtAll
 
 ## Run locally
 
+### Everything in Docker
+
 ```bash
-docker compose --profile full up -d --wait   # Postgres, Kafka (KRaft), Redis, Kafka UI on :8090
-                                             # POSTGRES_PORT=55432 if 5432 is taken
-sbt adminApi/run                             # :8080, Swagger UI at /docs; DB_PORT=55432 accordingly
-REDIS_URI=redis://localhost:6379 sbt flagDelivery/run   # :8081
-sbt eventIngest/run                                      # :8083
-DB_PORT=55432 sbt statsEngine/run                        # :8082
+sbt Docker/publishLocal                    # builds flagforge/{admin-api,flag-delivery,event-ingest,stats-engine}
+docker compose --profile apps up -d --wait # infrastructure + all services
+                                           # POSTGRES_PORT=55432 if 5432 is taken
+```
+
+Admin API + Swagger UI on :8080, flag delivery :8081, stats :8082, ingest :8083, Kafka UI :8090.
+
+### Services from sbt (for development)
+
+```bash
+docker compose --profile infra up -d --wait  # Postgres, Kafka (KRaft), Redis, Kafka UI
+sbt adminApi/run                             # DB_PORT=55432 if you changed POSTGRES_PORT
+REDIS_URI=redis://localhost:6379 sbt flagDelivery/run
+sbt eventIngest/run
+sbt statsEngine/run
 ```
 
 > Two `sbt` processes cannot run in the same directory at once. Either start the services from one sbt shell
-> (`adminApi/bgRun`, `flagDelivery/bgRun`) or export the classpath with `sbt "export flagDelivery/Runtime/fullClasspath"`
-> and run `java -cp <classpath> flagforge.delivery.Main`.
+> (`adminApi/bgRun`, `flagDelivery/bgRun`, ...) or run them in Docker.
 
 | Service | Env vars |
 |---|---|

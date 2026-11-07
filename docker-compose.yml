@@ -1,9 +1,32 @@
-# Local development infrastructure.
-#   docker compose up -d                  -> Postgres only (enough for the admin-api)
-#   docker compose --profile full up -d   -> + Redis, Kafka (KRaft) and Kafka UI for the next stages
+# flagforge, locally.
+#
+#   docker compose up -d                       Postgres only (enough to develop admin-api)
+#   docker compose --profile infra up -d       + Kafka (KRaft), Redis, Kafka UI (:8090): run services from sbt
+#   docker compose --profile apps up -d        the whole system in containers
+#
+# Service images are built with: sbt Docker/publishLocal
+# Host ports can be overridden: POSTGRES_PORT, REDIS_PORT.
 name: flagforge
 
+x-healthcheck: &http-health
+  interval: 5s
+  timeout: 3s
+  retries: 30
+  start_period: 10s
+
+x-kafka-env: &kafka-env
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+x-db-env: &db-env
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: flagforge
+  DB_PASSWORD: flagforge
+  DB_NAME: flagforge
+
 services:
+  # ---------------------------------------------------------------- infrastructure
+
   postgres:
     image: postgres:17-alpine
     environment:
@@ -22,7 +45,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    profiles: [full]
+    profiles: [infra, apps]
     ports:
       - "${REDIS_PORT:-6379}:6379"
     healthcheck:
@@ -33,7 +56,7 @@ services:
 
   kafka:
     image: apache/kafka:4.0.0
-    profiles: [full]
+    profiles: [infra, apps]
     ports:
       - "9092:9092"
     environment:
@@ -57,7 +80,7 @@ services:
 
   kafka-ui:
     image: kafbat/kafka-ui:v1.2.0
-    profiles: [full]
+    profiles: [infra, apps]
     depends_on:
       kafka:
         condition: service_healthy
@@ -66,6 +89,71 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+  # ---------------------------------------------------------------- flagforge services
+
+  admin-api:
+    image: flagforge/admin-api:latest
+    profiles: [apps]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    ports:
+      - "8080:8080"
+    environment:
+      <<: [*db-env, *kafka-env]
+      HTTP_PORT: "8080"
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]
+
+  flag-delivery:
+    image: flagforge/flag-delivery:latest
+    profiles: [apps]
+    depends_on:
+      kafka: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "8081:8081"
+    environment:
+      <<: *kafka-env
+      HTTP_PORT: "8081"
+      REDIS_URI: redis://redis:6379
+    healthcheck:
+      <<: *http-health
+      # ready = the change feed has been loaded
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8081 && printf 'GET /ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]
+
+  event-ingest:
+    image: flagforge/event-ingest:latest
+    profiles: [apps]
+    depends_on:
+      kafka: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "8083:8083"
+    environment:
+      <<: *kafka-env
+      HTTP_PORT: "8083"
+      REDIS_URI: redis://redis:6379
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8083 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]
+
+  stats-engine:
+    image: flagforge/stats-engine:latest
+    profiles: [apps]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    ports:
+      - "8082:8082"
+    environment:
+      <<: [*db-env, *kafka-env]
+      HTTP_PORT: "8082"
+    healthcheck:
+      <<: *http-health
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8082 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]
 
 volumes:
   pg-data:
