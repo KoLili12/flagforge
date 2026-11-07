@@ -29,3 +29,6 @@ object SegmentKey extends KeyType
 
 type RuleId = RuleId.T
 object RuleId extends KeyType
+
+type MetricKey = MetricKey.T
+object MetricKey extends KeyType

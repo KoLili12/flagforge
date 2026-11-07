@@ -8,7 +8,6 @@ import io.circe.parser.decode
 import io.circe.syntax.*
 import org.apache.kafka.clients.admin.NewTopic
 import org.apache.kafka.common.TopicPartition
-import org.apache.kafka.common.errors.TopicExistsException
 
 import scala.jdk.CollectionConverters.*
 
@@ -31,21 +30,17 @@ object ChangeFeed:
 
   /** Creates the topic if it does not exist yet. Safe to call from every service on startup. */
   def ensureTopic[F[_]: Async](config: KafkaConfig): F[Unit] =
-    KafkaAdminClient
-      .resource[F](AdminClientSettings(config.bootstrapServers))
-      .use: admin =>
-        val topic = NewTopic(config.topic, 1, config.replicationFactor).configs(
-          Map(
-            "cleanup.policy"            -> "compact",
-            "min.compaction.lag.ms"     -> "0",
-            "segment.ms"                -> (6 * 60 * 60 * 1000).toString,
-            "min.cleanable.dirty.ratio" -> "0.1"
-          ).asJava
-        )
-        admin.createTopic(topic).recover { case e if isTopicExists(e) => () }
-
-  private def isTopicExists(e: Throwable): Boolean =
-    e.isInstanceOf[TopicExistsException] || Option(e.getCause).exists(_.isInstanceOf[TopicExistsException])
+    Topics.ensure(
+      config.bootstrapServers,
+      NewTopic(config.topic, 1, config.replicationFactor).configs(
+        Map(
+          "cleanup.policy"            -> "compact",
+          "min.compaction.lag.ms"     -> "0",
+          "segment.ms"                -> (6 * 60 * 60 * 1000).toString,
+          "min.cleanable.dirty.ratio" -> "0.1"
+        ).asJava
+      )
+    )
 
   def encode(event: ChangeEvent): String = event.asJson.noSpaces
 
