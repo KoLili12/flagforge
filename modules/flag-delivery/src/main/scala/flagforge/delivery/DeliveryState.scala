@@ -2,9 +2,12 @@ package flagforge.delivery
 
 import flagforge.domain.*
 import io.circe.Codec
+import io.circe.syntax.*
 
 /** An applied change together with its change-feed offset (the SSE event id). */
-final case class Versioned(offset: Long, event: ChangeEvent)
+final case class Versioned(offset: Long, event: ChangeEvent):
+  /** Encoded once and shared by every connected client, instead of once per client. */
+  lazy val json: String = event.asJson.noSpaces
 
 /** Durable part of the state, stored in Redis for fast warm starts. */
 final case class Snapshot(offset: Long, environments: Map[EnvironmentKey, Ruleset]) derives Codec

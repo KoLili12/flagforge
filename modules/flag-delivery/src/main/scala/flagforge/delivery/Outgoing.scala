@@ -17,13 +17,13 @@ import org.http4s.ServerSentEvent.EventId
   */
 enum Outgoing:
   case Put(offset: Long, ruleset: Ruleset)
-  case Patch(offset: Long, event: ChangeEvent)
+  case Patch(change: Versioned)
 
   def toSse: ServerSentEvent = this match
     case Put(offset, ruleset) =>
       ServerSentEvent(Some(ruleset.asJson.noSpaces), Some("put"), Some(EventId(offset.toString)))
-    case Patch(offset, event) =>
-      ServerSentEvent(Some(event.asJson.noSpaces), Some("patch"), Some(EventId(offset.toString)))
+    case Patch(change) =>
+      ServerSentEvent(Some(change.json), Some("patch"), Some(EventId(change.offset.toString)))
 
 object Outgoing:
 
@@ -41,6 +41,6 @@ object Outgoing:
     cursor match
       case Some(seen) if seen == state.offset => (cursor, Vector.empty)
       case Some(seen)                         =>
-        val messages = state.changesSince(env, seen).fold(fullSync)(_.map(v => Patch(v.offset, v.event)))
+        val messages = state.changesSince(env, seen).fold(fullSync)(_.map(Patch(_)))
         (Some(state.offset), messages)
       case None => (Some(state.offset), fullSync)

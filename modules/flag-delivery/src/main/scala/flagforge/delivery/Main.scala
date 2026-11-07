@@ -89,6 +89,7 @@ object DeliveryApp:
         .withHost(config.host)
         .withPort(config.port)
         .withHttpApp(app)
+        .withMaxConnections(config.maxConnections)
         .withIdleTimeout(Duration.Inf) // SSE connections are long-lived; heartbeats keep proxies happy
         // Streams never complete on their own, so a graceful shutdown would always wait for the full timeout.
         // Clients reconnect (to another instance) with Last-Event-ID anyway.

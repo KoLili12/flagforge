@@ -15,7 +15,9 @@ final case class DeliveryConfig(
     redisUri: Option[String],
     heartbeat: FiniteDuration = 15.seconds,
     snapshotDebounce: FiniteDuration = 1.second,
-    maxRecentEvents: Int = DeliveryState.DefaultMaxRecent
+    maxRecentEvents: Int = DeliveryState.DefaultMaxRecent,
+    /** Every connected SDK holds a connection open: ember's default limit of 1024 is far too low here. */
+    maxConnections: Int = 20_000
 )
 
 object DeliveryConfig:
@@ -31,5 +33,6 @@ object DeliveryConfig:
       env("REDIS_URI").option,
       env("SSE_HEARTBEAT").as[FiniteDuration].default(15.seconds),
       env("SNAPSHOT_DEBOUNCE").as[FiniteDuration].default(1.second),
-      env("MAX_RECENT_EVENTS").as[Int].default(DeliveryState.DefaultMaxRecent)
+      env("MAX_RECENT_EVENTS").as[Int].default(DeliveryState.DefaultMaxRecent),
+      env("MAX_CONNECTIONS").as[Int].default(20_000)
     ).parMapN(DeliveryConfig.apply).load[F]

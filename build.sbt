@@ -59,6 +59,7 @@ lazy val root = project
     statsEngine,
     sdk,
     simulator,
+    loadTest,
     itTests
   )
   .settings(
@@ -237,6 +238,23 @@ lazy val simulator = project
     name                := "flagforge-simulator",
     Compile / mainClass := Some("flagforge.simulator.Main"),
     dockerExposedPorts  := Nil,
+    libraryDependencies ++= Seq(
+      "org.http4s" %% "http4s-ember-client" % V.http4s,
+      "org.http4s" %% "http4s-circe"        % V.http4s
+    )
+  )
+
+/** Load tests: SSE fan-out latency and ingest throughput against a running system. */
+lazy val loadTest = project
+  .in(file("modules/load-test"))
+  .dependsOn(domain.jvm)
+  .settings(serviceSettings)
+  .settings(
+    name                := "flagforge-load-test",
+    publish / skip      := true,
+    Compile / mainClass := Some("flagforge.loadtest.Main"),
+    run / javaOptions ++= Seq("-Xmx2g"),
+    run / connectInput := true,
     libraryDependencies ++= Seq(
       "org.http4s" %% "http4s-ember-client" % V.http4s,
       "org.http4s" %% "http4s-circe"        % V.http4s
