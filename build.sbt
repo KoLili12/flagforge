@@ -146,7 +146,8 @@ lazy val eventIngest = project
       "org.http4s"     %% "http4s-ember-server" % V.http4s,
       "org.http4s"     %% "http4s-dsl"          % V.http4s,
       "org.http4s"     %% "http4s-circe"        % V.http4s,
-      "dev.profunktor" %% "redis4cats-effects"  % V.redis4cats
+      "dev.profunktor" %% "redis4cats-effects"  % V.redis4cats,
+      "com.dimafeng"   %% "testcontainers-scala-munit" % V.testcontainers % Test
     )
   )
 
