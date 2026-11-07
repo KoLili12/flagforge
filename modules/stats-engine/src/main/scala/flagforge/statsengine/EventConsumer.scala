@@ -7,6 +7,7 @@ import fs2.kafka.*
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.metrics.Counter
+import org.typelevel.otel4s.trace.Tracer
 
 import scala.concurrent.duration.*
 
@@ -16,7 +17,8 @@ import scala.concurrent.duration.*
 final class EventConsumer[F[_]: Async: LoggerFactory](
     kafka: KafkaConfig,
     store: StatsStore[F],
-    stored: Counter[F, Long]
+    stored: Counter[F, Long],
+    tracer: Tracer[F]
 ):
   private val logger = LoggerFactory[F].getLogger
 
@@ -39,17 +41,23 @@ final class EventConsumer[F[_]: Async: LoggerFactory](
           records.filter(_.record.topic == topic).map(r =>
             decode(r.record.value).leftMap(e => s"${r.offset}: $e")
           )
-        val exposures = decoded(AnalyticsTopics.Exposures, AnalyticsTopics.decodeExposure)
-        val metrics   = decoded(AnalyticsTopics.Metrics, AnalyticsTopics.decodeMetric)
-        val errors    = exposures.collect { case Left(e) => e } ++ metrics.collect { case Left(e) => e }
-        for
-          good = (exposures.collect { case Right(e) => e }, metrics.collect { case Right(m) => m })
-          _ <- store.insertExposures(good._1)
-          _ <- store.insertMetrics(good._2)
-          _ <- stored.add(good._1.size.toLong, Attribute("kind", "exposure"))
-          _ <- stored.add(good._2.size.toLong, Attribute("kind", "metric"))
-          _ <- errors.traverse_(e => logger.warn(s"Skipped undecodable analytics event at $e"))
-          _ <- CommittableOffsetBatch.fromFoldable(chunk.map(_.offset)).commit
-        yield ()
+        val exposures     = decoded(AnalyticsTopics.Exposures, AnalyticsTopics.decodeExposure)
+        val metrics       = decoded(AnalyticsTopics.Metrics, AnalyticsTopics.decodeMetric)
+        val errors        = exposures.collect { case Left(e) => e } ++ metrics.collect { case Left(e) => e }
+        val goodExposures = exposures.collect { case Right(e) => e }
+        val goodMetrics   = metrics.collect { case Right(m) => m }
+        val store_        =
+          for
+            _ <- store.insertExposures(goodExposures)
+            _ <- store.insertMetrics(goodMetrics)
+            _ <- stored.add(goodExposures.size.toLong, Attribute("kind", "exposure"))
+            _ <- stored.add(goodMetrics.size.toLong, Attribute("kind", "metric"))
+            _ <- errors.traverse_(e => logger.warn(s"Skipped undecodable analytics event at $e"))
+            _ <- CommittableOffsetBatch.fromFoldable(chunk.map(_.offset)).commit
+          yield ()
+        tracer.span(
+          "analytics store batch",
+          Attribute("messaging.batch.message_count", records.size.toLong)
+        ).surround(store_)
       .compile
       .drain

@@ -60,7 +60,7 @@ object StatsApp:
         ).withDescription("Analytics events stored").create
       )
       store = StatsStore.postgres(pool)
-      _   <- supervised(EventConsumer(config.kafka, store, stored).run).background
+      _   <- supervised(EventConsumer(config.kafka, store, stored, telemetry.tracer).run).background
       app <- Resource.eval(Telemetry.instrument(telemetry)(ReportRoutes(store).routes.orNotFound))
     yield app
 

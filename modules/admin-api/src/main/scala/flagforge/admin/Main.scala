@@ -71,7 +71,11 @@ object AdminApp:
       plain <- routes[F](pool)
       app   <- Resource.eval(Telemetry.instrument(telemetry)(plain))
       _     <-
-        if config.relay.enabled then relay[F](pool, config.kafka, config.relay, telemetry)
+        if config.relay.enabled then
+          // The relay polls continuously: an untraced pool keeps its queries from flooding the tracing backend.
+          Database.pool[F](config.db.copy(poolSize =
+            3
+          )).flatMap(relay[F](_, config.kafka, config.relay, telemetry))
         else Resource.eval(logger.warn("Outbox relay is disabled: changes will not reach the data plane"))
       server <- EmberServerBuilder
         .default[F]
