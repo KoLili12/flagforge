@@ -1,7 +1,7 @@
 package flagforge.sdk
 
 import cats.Eq
-import cats.effect.std.Random
+import cats.effect.std.{Random, SecureRandom, UUIDGen}
 import cats.effect.syntax.all.*
 import cats.effect.{Async, Ref, Resource}
 import cats.syntax.all.*
@@ -26,7 +26,9 @@ final case class SdkConfig(
     minBackoff: FiniteDuration = 250.millis,
     maxBackoff: FiniteDuration = 30.seconds,
     /** No bytes for this long (the server sends heartbeats every 15s) means the connection is dead. */
-    idleTimeout: FiniteDuration = 45.seconds
+    idleTimeout: FiniteDuration = 45.seconds,
+    /** Exposure and metric tracking for experiments; off unless `events.uri` is set. */
+    events: EventsConfig = EventsConfig()
 )
 
 enum ConnectionState:
@@ -41,10 +43,14 @@ enum ConnectionState:
   * exponential backoff and full jitter, sending `Last-Event-ID` to receive only the missed changes.
   */
 trait FlagforgeClient[F[_]]:
+  /** Evaluates locally and records an exposure for experiment analysis (when events are enabled). */
   def evaluate[A](flag: Flag[A], context: EvaluationContext): F[FlagResult[A]]
   def get[A](flag: Flag[A], context: EvaluationContext): F[A]
 
-  /** Current value, then every change of it. */
+  /** Records a business event, e.g. `track(MetricKey("purchase"), user, Some(order.total))`. Never blocks. */
+  def track(metric: MetricKey, context: EvaluationContext, value: Option[Double] = None): F[Unit]
+
+  /** Current value, then every change of it. Does not record exposures. */
   def watch[A](flag: Flag[A], context: EvaluationContext): Stream[F, A]
 
   /** Waits for the first ruleset. `false` on timeout (flags then evaluate to their defaults). */
@@ -73,11 +79,25 @@ object FlagforgeClient:
       lastEventId <- Resource.eval(Ref.of[F, Option[EventId]](None))
       failures    <- Resource.eval(Ref.of[F, Int](0))
       random      <- Resource.eval(Random.scalaUtilRandom[F])
+      secure      <- Resource.eval(SecureRandom.javaSecuritySecureRandom[F])
+      given UUIDGen[F] = UUIDGen.fromSecureRandom[F](using summon, secure)
+      events <- config.events.uri.fold(Resource.pure[F, EventSink[F]](EventSink.noop[F]))(
+        EventSink.http[F](http, config.environment, config.events, _)
+      )
       streaming = Streaming(http, config, rulesets, connState, lastEventId, failures, random)
       _ <- streaming.run.background
     yield new FlagforgeClient[F]:
       def evaluate[A](flag: Flag[A], context: EvaluationContext): F[FlagResult[A]] =
-        rulesets.get.map(LocalEvaluation.evaluate(_, flag, context))
+        rulesets.get.map(LocalEvaluation.evaluate(_, flag, context)).flatTap: result =>
+          (result.variation, result.flagVersion).tupled.traverse_ : (variation, version) =>
+            Async[F].realTime.flatMap: now =>
+              events.exposed(
+                Exposure(config.environment, flag.key, variation, context.key, version, now.toMillis)
+              )
+
+      def track(metric: MetricKey, context: EvaluationContext, value: Option[Double]): F[Unit] =
+        (UUIDGen[F].randomUUID, Async[F].realTime).flatMapN: (id, now) =>
+          events.tracked(MetricEvent(id.toString, config.environment, metric, context.key, value, now.toMillis))
 
       def get[A](flag: Flag[A], context: EvaluationContext): F[A] = evaluate(flag, context).map(_.value)
 

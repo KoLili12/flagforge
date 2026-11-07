@@ -35,7 +35,12 @@ object Flag:
     FlagKey.either(key).map(Flag(_, default, read))
 
 /** Typed evaluation result. On any problem `value` is the flag's default and `reason` says why. */
-final case class FlagResult[A](value: A, variation: Option[VariationKey], reason: Reason):
+final case class FlagResult[A](
+    value: A,
+    variation: Option[VariationKey],
+    reason: Reason,
+    flagVersion: Option[Long] = None
+):
   def isDefault: Boolean = variation.isEmpty
 
 object LocalEvaluation:
@@ -53,5 +58,5 @@ object LocalEvaluation:
           case None       => FlagResult(flag.default, None, evaluation.reason)
           case Some(json) =>
             flag.read(json) match
-              case Some(value) => FlagResult(value, evaluation.variation, evaluation.reason)
+              case Some(value) => FlagResult(value, evaluation.variation, evaluation.reason, evaluation.flagVersion)
               case None        => fallback(ErrorKind.WrongType, s"unexpected value ${json.noSpaces}")
