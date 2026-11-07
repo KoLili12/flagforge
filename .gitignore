@@ -1,0 +1,12 @@
+target/
+project/target/
+project/project/
+.bsp/
+.bloop/
+.metals/
+.vscode/
+.idea/
+*.iml
+metals.sbt
+.DS_Store
+.env
