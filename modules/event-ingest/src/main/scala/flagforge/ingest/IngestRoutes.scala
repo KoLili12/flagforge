@@ -17,7 +17,8 @@ import org.typelevel.ci.*
   * per client and environment. Responses: 202 (with accepted/duplicate counts), 400, 429 + `Retry-After`,
   * 503.
   */
-final class IngestRoutes[F[_]: Concurrent](service: IngestService[F]) extends Http4sDsl[F]:
+final class IngestRoutes[F[_]: Concurrent](service: IngestService[F], metrics: IngestMetrics[F])
+    extends Http4sDsl[F]:
 
   private object Env:
     def unapply(s: String): Option[EnvironmentKey] = EnvironmentKey.option(s)
@@ -34,10 +35,12 @@ final class IngestRoutes[F[_]: Concurrent](service: IngestService[F]) extends Ht
       req
         .attemptAs[EventBatch]
         .foldF(
-          failure => BadRequest(Json.obj("errors" -> List(failure.message).asJson)),
+          failure =>
+            metrics.rejected("malformed") >> BadRequest(Json.obj("errors" -> List(failure.message).asJson)),
           batch =>
             service
               .ingest(env, client, batch)
+              .flatTap(metrics.observe(batch, _))
               .flatMap:
                 case IngestResult.Accepted(accepted, duplicates) =>
                   Accepted(Json.obj("accepted" -> accepted.asJson, "duplicates" -> duplicates.asJson))
@@ -48,6 +51,7 @@ final class IngestRoutes[F[_]: Concurrent](service: IngestService[F]) extends Ht
                     `Retry-After`.unsafeFromLong(math.max(1L, retryAfter.toSeconds + 1))
                   )
               .handleErrorWith(_ =>
-                ServiceUnavailable(Json.obj("error" -> "could not store events, retry".asJson))
+                metrics.rejected("unavailable") >>
+                  ServiceUnavailable(Json.obj("error" -> "could not store events, retry".asJson))
               )
         )

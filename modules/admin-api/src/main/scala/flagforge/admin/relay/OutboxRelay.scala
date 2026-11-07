@@ -3,9 +3,12 @@ package flagforge.admin.relay
 import cats.effect.{Async, Resource}
 import cats.syntax.all.*
 import fs2.Stream
-import fs2.kafka.{KafkaProducer, ProducerRecord}
+import flagforge.telemetry.Telemetry
+import fs2.kafka.{Header, Headers, KafkaProducer, ProducerRecord}
 import io.circe.Json
 import org.typelevel.log4cats.LoggerFactory
+import org.typelevel.otel4s.Attribute
+import org.typelevel.otel4s.metrics.{BucketBoundaries, Counter, Histogram}
 import skunk.*
 import skunk.circe.codec.all.jsonb
 import skunk.codec.all.*
@@ -29,10 +32,13 @@ final case class RelayConfig(
   *   - Rows are marked as published only after Kafka acknowledged them, in the same transaction that locked
   *     them: at-least-once delivery. Duplicates are harmless because consumers apply events by version.
   */
-final class OutboxRelay[F[_]: Async: LoggerFactory](
+final class OutboxRelay[F[_]: Async: LoggerFactory] private (
     pool: Resource[F, Session[F]],
     producer: KafkaProducer[F, String, String],
-    config: RelayConfig
+    config: RelayConfig,
+    telemetry: Telemetry[F],
+    published: Counter[F, Long],
+    lag: Histogram[F, Double]
 ):
   import OutboxRelay.*
 
@@ -47,9 +53,19 @@ final class OutboxRelay[F[_]: Async: LoggerFactory](
           s.execute(Sql.fetch)(config.batchSize).flatMap: rows =>
             if rows.isEmpty then 0.pure[F]
             else
-              val records = fs2.Chunk.from(rows.map(r => ProducerRecord(r.topic, r.key, r.payload.noSpaces)))
-              producer.produce(records).flatten *>
-                s.execute(Sql.markPublished)(Arr(rows.map(_.id)*)).as(rows.size)
+              val records = fs2.Chunk.from(rows.map(r =>
+                ProducerRecord(r.topic, r.key, r.payload.noSpaces).withHeaders(r.kafkaHeaders)
+              ))
+              telemetry.tracer
+                .span("outbox.publish", Attribute("messaging.batch.message_count", rows.size.toLong))
+                .surround(producer.produce(records).flatten) *>
+                s.execute(Sql.markPublished)(Arr(rows.map(_.id)*)) *>
+                recordMetrics(rows).as(rows.size)
+
+  private def recordMetrics(rows: List[Row]): F[Unit] =
+    Async[F].realTime.flatMap: now =>
+      published.add(rows.size.toLong) *>
+        rows.traverse_(r => lag.record((now.toMillis - r.createdAtMillis) / 1000.0))
 
   /** Publishes until the outbox is drained. */
   def publishAll: F[Int] =
@@ -78,15 +94,53 @@ object OutboxRelay:
 
   val Channel: Identifier = id"outbox_inserted"
 
-  final case class Row(id: Long, topic: String, key: String, payload: Json)
+  /** Header with the commit time of the change (epoch millis): consumers use it to measure propagation
+    * latency.
+    */
+  val CreatedAtHeader = "flagforge-created-at"
+
+  final case class Row(
+      id: Long,
+      topic: String,
+      key: String,
+      payload: Json,
+      headers: Map[String, String],
+      createdAtMillis: Long
+  ):
+    /** Trace context of the request that made the change, plus its commit time. */
+    def kafkaHeaders: Headers =
+      Headers.fromIterable(
+        (headers + (CreatedAtHeader -> createdAtMillis.toString)).map((k, v) => Header(k, v))
+      )
+
+  def make[F[_]: Async: LoggerFactory](
+      pool: Resource[F, Session[F]],
+      producer: KafkaProducer[F, String, String],
+      config: RelayConfig,
+      telemetry: Telemetry[F]
+  ): F[OutboxRelay[F]] =
+    for
+      published <- telemetry.meter
+        .counter[Long]("flagforge.outbox.published")
+        .withDescription("Change events published from the outbox to Kafka")
+        .create
+      lag <- telemetry.meter
+        .histogram[Double]("flagforge.outbox.lag")
+        .withUnit("s")
+        .withDescription("Time from commit to publication in Kafka")
+        .withExplicitBucketBoundaries(BucketBoundaries(
+          0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10
+        ))
+        .create
+    yield new OutboxRelay(pool, producer, config, telemetry, published, lag)
 
   private object Sql:
     val tryLock: Query[Long, Boolean] = sql"SELECT pg_try_advisory_xact_lock($int8)".query(bool)
 
     val fetch: Query[Int, Row] =
-      sql"""SELECT id, topic, key, payload FROM outbox
-            WHERE published_at IS NULL ORDER BY id LIMIT $int4"""
-        .query(int8 *: text *: text *: jsonb[Json])
+      sql"""SELECT id, topic, key, payload, headers, (extract(epoch FROM created_at) * 1000)::int8
+            FROM outbox WHERE published_at IS NULL ORDER BY id LIMIT $int4"""
+        .query(int8 *: text *: text *: jsonb[Json] *: jsonb[Map[String, String]] *: int8)
         .to[Row]
 
     val markPublished: Command[Arr[Long]] =

@@ -52,6 +52,7 @@ lazy val root = project
     statsCore.jvm,
     statsCore.js,
     messaging,
+    telemetry,
     adminApi,
     flagDelivery,
     eventIngest,
@@ -109,11 +110,26 @@ lazy val messaging = project
     )
   )
 
+/** OpenTelemetry wiring shared by the services: SDK from OTEL_* env vars, HTTP tracing and metrics. */
+lazy val telemetry = project
+  .in(file("modules/telemetry"))
+  .settings(testSettings)
+  .settings(
+    name := "flagforge-telemetry",
+    libraryDependencies ++= Seq(
+      "org.typelevel"   %% "otel4s-oteljava"                       % V.otel4s,
+      "org.http4s"      %% "http4s-server"                         % V.http4s,
+      "org.http4s"      %% "http4s-otel4s-middleware-trace-server" % V.otel4sHttp4s,
+      "org.http4s"      %% "http4s-otel4s-middleware-metrics"      % V.otel4sHttp4s,
+      "io.opentelemetry" % "opentelemetry-exporter-otlp"           % V.openTelemetry
+    )
+  )
+
 /** Control plane: CRUD for environments, flags and segments, backed by Postgres; relays the outbox to Kafka.
   */
 lazy val adminApi = project
   .in(file("modules/admin-api"))
-  .dependsOn(evalCore.jvm, messaging)
+  .dependsOn(evalCore.jvm, messaging, telemetry)
   .enablePlugins(JavaAppPackaging, DockerPlugin)
   .settings(testSettings, serviceSettings, dockerSettings(8080))
   .settings(
@@ -138,7 +154,7 @@ lazy val adminApi = project
 /** Data plane: consumes the change feed and streams rulesets to SDKs over Server-Sent Events. */
 lazy val flagDelivery = project
   .in(file("modules/flag-delivery"))
-  .dependsOn(evalCore.jvm, messaging)
+  .dependsOn(evalCore.jvm, messaging, telemetry)
   .enablePlugins(JavaAppPackaging, DockerPlugin)
   .settings(testSettings, serviceSettings, dockerSettings(8081))
   .settings(
@@ -155,7 +171,7 @@ lazy val flagDelivery = project
 /** Receives exposure and metric events from SDKs: rate limiting and deduplication in Redis, then Kafka. */
 lazy val eventIngest = project
   .in(file("modules/event-ingest"))
-  .dependsOn(messaging)
+  .dependsOn(messaging, telemetry)
   .enablePlugins(JavaAppPackaging, DockerPlugin)
   .settings(testSettings, serviceSettings, dockerSettings(8083))
   .settings(
@@ -173,7 +189,7 @@ lazy val eventIngest = project
 /** Consumes exposures and metric events into Postgres and serves experiment reports. */
 lazy val statsEngine = project
   .in(file("modules/stats-engine"))
-  .dependsOn(statsCore.jvm, messaging)
+  .dependsOn(statsCore.jvm, messaging, telemetry)
   .enablePlugins(JavaAppPackaging, DockerPlugin)
   .settings(testSettings, serviceSettings, dockerSettings(8082))
   .settings(

@@ -6,6 +6,7 @@ import flagforge.admin.{Actor, AdminError}
 import flagforge.admin.db.codecs.*
 import flagforge.domain.*
 import io.circe.syntax.*
+import org.typelevel.otel4s.trace.Tracer
 import skunk.*
 import skunk.circe.codec.all.jsonb
 import skunk.data.Completion
@@ -82,7 +83,7 @@ object FlagRepository:
     def definitions[F[_]](s: Session[F], includeArchived: Boolean): F[List[FlagDefinition]] =
       s.execute(selectDefinitions)(includeArchived)
 
-  def postgres[F[_]: MonadCancelThrow](pool: Resource[F, Session[F]]): FlagRepository[F] = new:
+  def postgres[F[_]: MonadCancelThrow: Tracer](pool: Resource[F, Session[F]]): FlagRepository[F] = new:
 
     def listDefinitions(includeArchived: Boolean): F[List[FlagDefinition]] =
       pool.use(Sql.definitions(_, includeArchived))

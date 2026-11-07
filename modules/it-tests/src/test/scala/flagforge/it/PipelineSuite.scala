@@ -102,7 +102,7 @@ class PipelineSuite extends CatsEffectSuite:
         _        <- setUp(p, "e2e-warm")
         snapshot <- snapshotWithFlag
         _        <- DeliveryApp
-          .resource[IO](p.deliveryConfig, snapshots)
+          .resource[IO](p.deliveryConfig, snapshots, flagforge.telemetry.Telemetry.noop[IO])
           .use: second =>
             for
               restored <- second.state.get // before the consumer had any chance to catch up

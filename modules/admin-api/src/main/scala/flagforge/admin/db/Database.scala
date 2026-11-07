@@ -3,6 +3,7 @@ package flagforge.admin.db
 import cats.effect.std.Console
 import cats.effect.{Async, Resource, Sync}
 import flagforge.admin.DbConfig
+import flagforge.telemetry.Telemetry
 import fs2.io.net.Network
 import org.flywaydb.core.Flyway
 import org.typelevel.otel4s.metrics.Meter
@@ -11,10 +12,16 @@ import skunk.Session
 
 object Database:
 
-  /** Pool of skunk sessions. Tracing and metrics are no-ops until otel4s is wired in. */
   def pool[F[_]: Async: Network: Console](config: DbConfig): Resource[F, Resource[F, Session[F]]] =
-    given Tracer[F] = Tracer.noop[F]
-    given Meter[F]  = Meter.noop[F]
+    pool(config, Telemetry.noop[F])
+
+  /** Pool of skunk sessions; every query becomes a span of the current trace. */
+  def pool[F[_]: Async: Network: Console](
+      config: DbConfig,
+      telemetry: Telemetry[F]
+  ): Resource[F, Resource[F, Session[F]]] =
+    given Tracer[F] = telemetry.tracer
+    given Meter[F]  = telemetry.meter
     Session
       .Builder[F]
       .withHost(config.host)

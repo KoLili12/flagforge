@@ -6,6 +6,7 @@ import flagforge.admin.Actor
 import flagforge.admin.db.codecs.*
 import flagforge.domain.*
 import io.circe.syntax.*
+import org.typelevel.otel4s.trace.Tracer
 import skunk.*
 import skunk.implicits.*
 
@@ -28,7 +29,7 @@ object EnvironmentRepository:
     val insert: Command[Environment] =
       sql"INSERT INTO environments (key, name) VALUES ($environment)".command
 
-  def postgres[F[_]: MonadCancelThrow](pool: Resource[F, Session[F]]): EnvironmentRepository[F] = new:
+  def postgres[F[_]: MonadCancelThrow: Tracer](pool: Resource[F, Session[F]]): EnvironmentRepository[F] = new:
 
     def list: F[List[Environment]] = pool.use(_.execute(Sql.selectAll))
 

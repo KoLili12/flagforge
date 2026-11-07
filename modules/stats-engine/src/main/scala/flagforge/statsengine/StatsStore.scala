@@ -133,6 +133,19 @@ object StatsStore:
   def pool[F[_]: Async: Network: Console](config: DbConfig): Resource[F, Resource[F, Session[F]]] =
     given Tracer[F] = Tracer.noop[F]
     given Meter[F]  = Meter.noop[F]
+    builder[F](config)
+
+  def pool[F[_]: Async: Network: Console](
+      config: DbConfig,
+      tracer: Tracer[F],
+      meter: Meter[F]
+  ): Resource[F, Resource[F, Session[F]]] =
+    given Tracer[F] = tracer
+    given Meter[F]  = meter
+    builder[F](config)
+
+  private def builder[F[_]: Async: Network: Console: Tracer: Meter](config: DbConfig)
+      : Resource[F, Resource[F, Session[F]]] =
     Session
       .Builder[F]
       .withHost(config.host)

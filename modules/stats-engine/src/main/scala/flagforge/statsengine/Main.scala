@@ -7,6 +7,7 @@ import cats.syntax.all.*
 import ciris.*
 import com.comcast.ip4s.{Host, Port}
 import flagforge.messaging.{AnalyticsTopics, KafkaConfig}
+import flagforge.telemetry.Telemetry
 import fs2.io.net.Network
 import org.http4s.HttpApp
 import org.http4s.ember.server.EmberServerBuilder
@@ -39,7 +40,10 @@ object StatsConfig:
 
 object StatsApp:
 
-  def resource[F[_]: Async: Network: Console: LoggerFactory](config: StatsConfig): Resource[F, HttpApp[F]] =
+  def resource[F[_]: Async: Network: Console: LoggerFactory](
+      config: StatsConfig,
+      telemetry: Telemetry[F]
+  ): Resource[F, HttpApp[F]] =
     val logger                           = LoggerFactory[F].getLogger
     def supervised(fa: F[Unit]): F[Unit] = (fa >> logger.warn("Analytics consumer stopped, restarting"))
       .handleErrorWith(e =>
@@ -47,16 +51,25 @@ object StatsApp:
       )
       .foreverM
     for
-      _    <- Resource.eval(StatsStore.migrate[F](config.db))
-      _    <- Resource.eval(AnalyticsTopics.ensure[F](config.kafka))
-      pool <- StatsStore.pool[F](config.db)
+      _      <- Resource.eval(StatsStore.migrate[F](config.db))
+      _      <- Resource.eval(AnalyticsTopics.ensure[F](config.kafka))
+      pool   <- StatsStore.pool[F](config.db, telemetry.tracer, telemetry.meter)
+      stored <- Resource.eval(
+        telemetry.meter.counter[Long](
+          "flagforge.stats.stored"
+        ).withDescription("Analytics events stored").create
+      )
       store = StatsStore.postgres(pool)
-      _ <- supervised(EventConsumer(config.kafka, store).run).background
-    yield ReportRoutes(store).routes.orNotFound
+      _   <- supervised(EventConsumer(config.kafka, store, stored).run).background
+      app <- Resource.eval(Telemetry.instrument(telemetry)(ReportRoutes(store).routes.orNotFound))
+    yield app
 
-  def server[F[_]: Async: Network: Console: LoggerFactory](config: StatsConfig): Resource[F, Server] =
+  def server[F[_]: Async: Network: Console: LoggerFactory](
+      config: StatsConfig,
+      telemetry: Telemetry[F]
+  ): Resource[F, Server] =
     for
-      app    <- resource[F](config)
+      app    <- resource[F](config, telemetry)
       server <-
         EmberServerBuilder.default[F].withHost(config.host).withPort(config.port).withHttpApp(app).build
       _ <- Resource.eval(LoggerFactory[F].getLogger.info(s"Stats engine on ${server.baseUri}"))
@@ -65,4 +78,9 @@ object StatsApp:
 object Main extends IOApp.Simple:
   given LoggerFactory[IO] = Slf4jFactory.create[IO]
 
-  def run: IO[Unit] = StatsConfig.load[IO].toResource.flatMap(StatsApp.server[IO]).useForever
+  def run: IO[Unit] =
+    (for
+      config    <- StatsConfig.load[IO].toResource
+      telemetry <- Telemetry.autoConfigured[IO]("stats-engine")
+      server    <- StatsApp.server[IO](config, telemetry)
+    yield server).useForever

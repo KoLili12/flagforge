@@ -6,6 +6,7 @@ import flagforge.admin.{Actor, AdminError}
 import flagforge.admin.db.codecs.*
 import flagforge.domain.*
 import io.circe.syntax.*
+import org.typelevel.otel4s.trace.Tracer
 import skunk.*
 import skunk.circe.codec.all.jsonb
 import skunk.codec.all.*
@@ -41,7 +42,7 @@ object SegmentRepository:
             WHERE environment = $environmentKey AND key = $segmentKey AND version = $int8
             RETURNING version""".query(int8)
 
-  def postgres[F[_]: MonadCancelThrow](pool: Resource[F, Session[F]]): SegmentRepository[F] = new:
+  def postgres[F[_]: MonadCancelThrow: Tracer](pool: Resource[F, Session[F]]): SegmentRepository[F] = new:
 
     def list(env: EnvironmentKey): F[List[Segment]] = pool.use(_.execute(Sql.selectAll)(env))
 

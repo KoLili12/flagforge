@@ -10,6 +10,8 @@ import flagforge.admin.{AdminApp, DbConfig}
 import flagforge.delivery.{DeliveryApp, DeliveryConfig, RedisSnapshotStore, SnapshotStore}
 import flagforge.ingest.{IngestApp, IngestConfig, IngestLimits, RateLimit}
 import flagforge.statsengine.{StatsApp, StatsConfig}
+import flagforge.telemetry.Telemetry
+import org.typelevel.otel4s.trace.Tracer
 import flagforge.messaging.KafkaConfig
 import io.circe.Json
 import io.circe.parser.parse
@@ -86,12 +88,13 @@ object Pipeline:
       )
       kafkaConfig = KafkaConfig(kafkaContainer.getBootstrapServers)
       redisUri    = s"redis://${redisContainer.host}:${redisContainer.mappedPort(6379)}"
-      pool  <- AdminApp.database[IO](db)
-      admin <- AdminApp.routes[IO](pool)
+      pool  <- AdminApp.database[IO](db, Telemetry.noop[IO])
+      admin <- AdminApp.routes[IO](pool)(using summon, Tracer.noop[IO])
       _     <- AdminApp.relay[IO](
         pool,
         kafkaConfig,
-        RelayConfig(enabled = true, batchSize = 100, pollInterval = 1.second)
+        RelayConfig(enabled = true, batchSize = 100, pollInterval = 1.second),
+        Telemetry.noop[IO]
       )
       deliveryConfig = DeliveryConfig(
         host"127.0.0.1",
@@ -102,7 +105,7 @@ object Pipeline:
         snapshotDebounce = 200.millis
       )
       snapshots <- RedisSnapshotStore.resource[IO](redisUri)
-      delivery  <- DeliveryApp.server[IO](deliveryConfig, snapshots)
+      delivery  <- DeliveryApp.server[IO](deliveryConfig, snapshots, Telemetry.noop[IO])
       ingest    <- IngestApp.server[IO](
         IngestConfig(
           host"127.0.0.1",
@@ -112,7 +115,8 @@ object Pipeline:
           RateLimit(capacity = 100_000, refillPerSecond = 50_000),
           dedupTtl = 1.hour,
           IngestLimits()
-        )
+        ),
+        Telemetry.noop[IO]
       )
       stats <- StatsApp.resource[IO](
         StatsConfig(
@@ -120,6 +124,7 @@ object Pipeline:
           port"0",
           flagforge.statsengine.DbConfig(db.host, db.port, db.user, db.password, db.database, poolSize = 4),
           kafkaConfig
-        )
+        ),
+        Telemetry.noop[IO]
       )
     yield Pipeline(admin, pool, delivery.baseUri, deliveryConfig, ingest.baseUri, stats, redisUri)

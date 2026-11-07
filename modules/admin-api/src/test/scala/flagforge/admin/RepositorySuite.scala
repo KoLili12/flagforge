@@ -4,6 +4,7 @@ import cats.effect.{IO, Resource}
 import flagforge.admin.store.{EnvironmentRepository, FlagRepository, SegmentRepository}
 import flagforge.domain.*
 import io.circe.Json
+import org.typelevel.otel4s.trace.Tracer.Implicits.noop
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*

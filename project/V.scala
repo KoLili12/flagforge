@@ -20,4 +20,6 @@ object V {
   val testcontainersJava = "2.0.3"
   val fs2Kafka           = "3.9.1"
   val redis4cats         = "2.0.6"
+  val otel4sHttp4s       = "0.17.0" // the 0.17 line is built for otel4s 0.16, like skunk 1.0
+  val openTelemetry      = "1.61.0"
 }

@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import ciris.*
 import com.comcast.ip4s.{Host, Port}
 import flagforge.messaging.{AnalyticsTopics, ChangeFeed, KafkaConfig}
+import flagforge.telemetry.Telemetry
 import fs2.io.net.Network
 import fs2.kafka.KafkaProducer
 import org.http4s.HttpApp
@@ -45,7 +46,10 @@ object IngestConfig:
 
 object IngestApp:
 
-  def resource[F[_]: Async: LoggerFactory](config: IngestConfig): Resource[F, HttpApp[F]] =
+  def resource[F[_]: Async: LoggerFactory](
+      config: IngestConfig,
+      telemetry: Telemetry[F]
+  ): Resource[F, HttpApp[F]] =
     require(
       config.limits.maxBatch <= config.rateLimit.capacity,
       "MAX_BATCH must not exceed RATE_LIMIT_CAPACITY"
@@ -54,12 +58,17 @@ object IngestApp:
       _        <- Resource.eval(AnalyticsTopics.ensure[F](config.kafka))
       guards   <- Guards.redis[F](config.redisUri, config.rateLimit, config.dedupTtl)
       producer <- KafkaProducer.resource(ChangeFeed.producerSettings[F](config.kafka).withLinger(5.millis))
+      metrics  <- Resource.eval(IngestMetrics.make(telemetry.meter))
       service = IngestService(guards, EventPublisher.kafka(producer), config.limits)
-    yield IngestRoutes(service).routes.orNotFound
+      app <- Resource.eval(Telemetry.instrument(telemetry)(IngestRoutes(service, metrics).routes.orNotFound))
+    yield app
 
-  def server[F[_]: Async: Network: LoggerFactory](config: IngestConfig): Resource[F, Server] =
+  def server[F[_]: Async: Network: LoggerFactory](
+      config: IngestConfig,
+      telemetry: Telemetry[F]
+  ): Resource[F, Server] =
     for
-      app    <- resource[F](config)
+      app    <- resource[F](config, telemetry)
       server <-
         EmberServerBuilder.default[F].withHost(config.host).withPort(config.port).withHttpApp(app).build
       _ <- Resource.eval(LoggerFactory[F].getLogger.info(s"Event ingest on ${server.baseUri}"))
@@ -68,4 +77,9 @@ object IngestApp:
 object Main extends IOApp.Simple:
   given LoggerFactory[IO] = Slf4jFactory.create[IO]
 
-  def run: IO[Unit] = IngestConfig.load[IO].toResource.flatMap(IngestApp.server[IO]).useForever
+  def run: IO[Unit] =
+    (for
+      config    <- IngestConfig.load[IO].toResource
+      telemetry <- Telemetry.autoConfigured[IO]("event-ingest")
+      server    <- IngestApp.server[IO](config, telemetry)
+    yield server).useForever
