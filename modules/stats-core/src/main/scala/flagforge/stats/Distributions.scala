@@ -4,8 +4,8 @@ package flagforge.stats
   * code runs on the JVM and in Scala.js. Accuracy is ~1e-10 or better (verified against scipy in tests).
   *
   * Algorithms: Lanczos approximation for log-gamma; series / Lentz continued fraction for the regularized
-  * incomplete gamma and beta functions (Numerical Recipes, ch. 6); Acklam's rational approximation refined by one
-  * Halley step for the normal quantile.
+  * incomplete gamma and beta functions (Numerical Recipes, ch. 6); Acklam's rational approximation refined by
+  * one Halley step for the normal quantile.
   */
 object Distributions:
 
@@ -89,14 +89,14 @@ object Distributions:
 
   private def betaContinuedFraction(a: Double, b: Double, x: Double): Double =
     def clamp(v: Double) = if math.abs(v) < FpMin then FpMin else v
-    val qab  = a + b
-    val qap  = a + 1
-    val qam  = a - 1
-    var c    = 1.0
-    var d    = 1.0 / clamp(1 - qab * x / qap)
-    var h    = d
-    var m    = 1
-    var done = false
+    val qab              = a + b
+    val qap              = a + 1
+    val qam              = a - 1
+    var c                = 1.0
+    var d                = 1.0 / clamp(1 - qab * x / qap)
+    var h                = d
+    var m                = 1
+    var done             = false
     while !done && m < MaxIter do
       val m2   = 2 * m
       val even = m * (b - m) * x / ((qam + m2) * (a + m2))
@@ -130,8 +130,12 @@ object Distributions:
     6.680131188771972e+01, -1.328068155288572e+01)
   private val C = Array(-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
     -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
-  private val D = Array(7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
-    3.754408661907416e+00)
+  private val D = Array(
+    7.784695709041462e-03,
+    3.224671290700398e-01,
+    2.445134137142996e+00,
+    3.754408661907416e+00
+  )
 
   /** Inverse of the standard normal CDF. */
   def normalQuantile(p: Double): Double =
@@ -140,7 +144,7 @@ object Distributions:
       (((((C(0) * q + C(1)) * q + C(2)) * q + C(3)) * q + C(4)) * q + C(5)) /
         ((((D(0) * q + D(1)) * q + D(2)) * q + D(3)) * q + 1)
     val low = 0.02425
-    val x0 =
+    val x0  =
       if p < low then tail(math.sqrt(-2 * math.log(p)))
       else if p > 1 - low then -tail(math.sqrt(-2 * math.log1p(-p)))
       else

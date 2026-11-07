@@ -97,7 +97,14 @@ object FlagforgeClient:
 
       def track(metric: MetricKey, context: EvaluationContext, value: Option[Double]): F[Unit] =
         (UUIDGen[F].randomUUID, Async[F].realTime).flatMapN: (id, now) =>
-          events.tracked(MetricEvent(id.toString, config.environment, metric, context.key, value, now.toMillis))
+          events.tracked(MetricEvent(
+            id.toString,
+            config.environment,
+            metric,
+            context.key,
+            value,
+            now.toMillis
+          ))
 
       def get[A](flag: Flag[A], context: EvaluationContext): F[A] = evaluate(flag, context).map(_.value)
 

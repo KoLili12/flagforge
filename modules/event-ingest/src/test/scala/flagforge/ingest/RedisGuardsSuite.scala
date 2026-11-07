@@ -27,9 +27,9 @@ class RedisGuardsSuite extends CatsEffectSuite with TestContainerForAll:
   test("token bucket: allows the capacity, then limits with a retry hint, then refills"):
     guards(RateLimit(capacity = 10, refillPerSecond = 20)).use: g =>
       for
-        burst   <- (1 to 5).toList.traverse(_ => g.acquire("bucket-a", 2))
-        limited <- g.acquire("bucket-a", 4)
-        _       <- IO.sleep(250.millis)
+        burst    <- (1 to 5).toList.traverse(_ => g.acquire("bucket-a", 2))
+        limited  <- g.acquire("bucket-a", 4)
+        _        <- IO.sleep(250.millis)
         refilled <- g.acquire("bucket-a", 4)
       yield
         assertEquals(burst, List.fill(5)(RateDecision.Allowed))

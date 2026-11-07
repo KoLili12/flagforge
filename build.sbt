@@ -77,7 +77,7 @@ lazy val statsCore = crossProject(JVMPlatform, JSPlatform)
   .in(file("modules/stats-core"))
   .settings(testSettings)
   .settings(
-    name := "flagforge-stats-core",
+    name                               := "flagforge-stats-core",
     libraryDependencies += "io.circe" %%% "circe-core" % V.circe
   )
 
@@ -143,10 +143,10 @@ lazy val eventIngest = project
     name                := "flagforge-event-ingest",
     Compile / mainClass := Some("flagforge.ingest.Main"),
     libraryDependencies ++= Seq(
-      "org.http4s"     %% "http4s-ember-server" % V.http4s,
-      "org.http4s"     %% "http4s-dsl"          % V.http4s,
-      "org.http4s"     %% "http4s-circe"        % V.http4s,
-      "dev.profunktor" %% "redis4cats-effects"  % V.redis4cats,
+      "org.http4s"     %% "http4s-ember-server"        % V.http4s,
+      "org.http4s"     %% "http4s-dsl"                 % V.http4s,
+      "org.http4s"     %% "http4s-circe"               % V.http4s,
+      "dev.profunktor" %% "redis4cats-effects"         % V.redis4cats,
       "com.dimafeng"   %% "testcontainers-scala-munit" % V.testcontainers % Test
     )
   )
@@ -160,13 +160,13 @@ lazy val statsEngine = project
     name                := "flagforge-stats-engine",
     Compile / mainClass := Some("flagforge.statsengine.Main"),
     libraryDependencies ++= Seq(
-      "org.http4s"    %% "http4s-ember-server"        % V.http4s,
-      "org.http4s"    %% "http4s-dsl"                 % V.http4s,
-      "org.http4s"    %% "http4s-circe"               % V.http4s,
-      "org.tpolecat"  %% "skunk-core"                 % V.skunk,
-      "org.flywaydb"   % "flyway-core"                % V.flyway,
-      "org.flywaydb"   % "flyway-database-postgresql" % V.flyway,
-      "org.postgresql" % "postgresql"                 % V.postgresql,
+      "org.http4s"    %% "http4s-ember-server"             % V.http4s,
+      "org.http4s"    %% "http4s-dsl"                      % V.http4s,
+      "org.http4s"    %% "http4s-circe"                    % V.http4s,
+      "org.tpolecat"  %% "skunk-core"                      % V.skunk,
+      "org.flywaydb"   % "flyway-core"                     % V.flyway,
+      "org.flywaydb"   % "flyway-database-postgresql"      % V.flyway,
+      "org.postgresql" % "postgresql"                      % V.postgresql,
       "com.dimafeng"  %% "testcontainers-scala-munit"      % V.testcontainers % Test,
       "com.dimafeng"  %% "testcontainers-scala-postgresql" % V.testcontainers % Test
     )

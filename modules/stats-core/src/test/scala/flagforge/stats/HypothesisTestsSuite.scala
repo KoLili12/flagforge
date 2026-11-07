@@ -19,7 +19,10 @@ class HypothesisTestsSuite extends munit.FunSuite:
     close(e.ciHigh, 3.984096267141, 1e-8)
 
   test("two-proportion z-test matches the reference"):
-    val e = HypothesisTests.twoProportions(VariationStats("c", 1000, 200, 200, 200), VariationStats("t", 1000, 240, 240, 240))
+    val e = HypothesisTests.twoProportions(
+      VariationStats("c", 1000, 200, 200, 200),
+      VariationStats("t", 1000, 240, 240, 240)
+    )
     close(e.statistic, 2.159167585438)
     close(e.pValue, 0.030837167829)
     close(e.ciLow, 0.003732721356)
@@ -27,11 +30,13 @@ class HypothesisTestsSuite extends munit.FunSuite:
     close(e.relativeLift.get, 0.2)
 
   test("sample ratio mismatch"):
-    val fine = HypothesisTests.sampleRatioMismatch(Map("a" -> 5100L, "b" -> 4900L), Map("a" -> 1.0, "b" -> 1.0))
+    val fine =
+      HypothesisTests.sampleRatioMismatch(Map("a" -> 5100L, "b" -> 4900L), Map("a" -> 1.0, "b" -> 1.0))
     close(fine.chiSquared, 4.0)
     close(fine.pValue, 0.045500263896)
     assert(!fine.detected, "p = 0.045 is not an SRM at the 0.001 threshold")
-    val broken = HypothesisTests.sampleRatioMismatch(Map("a" -> 5300L, "b" -> 4700L), Map("a" -> 50.0, "b" -> 50.0))
+    val broken =
+      HypothesisTests.sampleRatioMismatch(Map("a" -> 5300L, "b" -> 4700L), Map("a" -> 50.0, "b" -> 50.0))
     close(broken.pValue / 1.97317529007539e-09, 1.0, 1e-6)
     assert(broken.detected)
 
@@ -45,8 +50,14 @@ class HypothesisTestsSuite extends munit.FunSuite:
     ).foreach(e => assertEquals(e.pValue, 1.0))
 
   /** Simulates experiments with a known truth: this is what makes the numbers trustworthy. */
-  private def simulate(runs: Int, users: Int, controlRate: Double, treatmentRate: Double, seed: Long): Double =
-    val random = Random(seed)
+  private def simulate(
+      runs: Int,
+      users: Int,
+      controlRate: Double,
+      treatmentRate: Double,
+      seed: Long
+  ): Double =
+    val random                          = Random(seed)
     def arm(name: String, rate: Double) =
       val conversions = (1 to users).count(_ => random.nextDouble() < rate).toLong
       VariationStats(name, users.toLong, conversions, conversions.toDouble, conversions.toDouble)
@@ -78,7 +89,8 @@ class AnalysisSuite extends munit.FunSuite:
     assertEquals(report.adjustedAlpha, 0.025)
 
   test("flags sample ratio mismatch and small samples"):
-    val report = Analysis.report(List(control, better.copy(users = 4000), VariationStats("tiny", 10, 1, 1, 1)), "off")
+    val report =
+      Analysis.report(List(control, better.copy(users = 4000), VariationStats("tiny", 10, 1, 1, 1)), "off")
     val warnings = report.toOption.get.warnings
     assert(warnings.exists(_.startsWith("Sample ratio mismatch")), warnings)
     assert(warnings.exists(_.contains("too early")), warnings)

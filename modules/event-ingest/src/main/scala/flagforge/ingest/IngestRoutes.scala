@@ -13,8 +13,9 @@ import org.typelevel.ci.*
 
 /** `POST /events/v1/environments/{env}/batch` with an [[EventBatch]] body.
   *
-  * Clients identify themselves with `X-Client-Id` (the SDK sends a random id per instance); rate limits are per
-  * client and environment. Responses: 202 (with accepted/duplicate counts), 400, 429 + `Retry-After`, 503.
+  * Clients identify themselves with `X-Client-Id` (the SDK sends a random id per instance); rate limits are
+  * per client and environment. Responses: 202 (with accepted/duplicate counts), 400, 429 + `Retry-After`,
+  * 503.
   */
 final class IngestRoutes[F[_]: Concurrent](service: IngestService[F]) extends Http4sDsl[F]:
 
@@ -40,11 +41,13 @@ final class IngestRoutes[F[_]: Concurrent](service: IngestService[F]) extends Ht
               .flatMap:
                 case IngestResult.Accepted(accepted, duplicates) =>
                   Accepted(Json.obj("accepted" -> accepted.asJson, "duplicates" -> duplicates.asJson))
-                case IngestResult.Invalid(errors) => BadRequest(Json.obj("errors" -> errors.asJson))
+                case IngestResult.Invalid(errors)         => BadRequest(Json.obj("errors" -> errors.asJson))
                 case IngestResult.RateLimited(retryAfter) =>
                   TooManyRequests(
                     Json.obj("error" -> "rate limit exceeded".asJson),
                     `Retry-After`.unsafeFromLong(math.max(1L, retryAfter.toSeconds + 1))
                   )
-              .handleErrorWith(_ => ServiceUnavailable(Json.obj("error" -> "could not store events, retry".asJson)))
+              .handleErrorWith(_ =>
+                ServiceUnavailable(Json.obj("error" -> "could not store events, retry".asJson))
+              )
         )

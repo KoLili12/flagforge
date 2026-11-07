@@ -19,7 +19,8 @@ class StatsStoreSuite extends CatsEffectSuite with TestContainerForAll:
 
   private def withStore[A](f: StatsStore[IO] => IO[A]): IO[A] =
     withContainers: pg =>
-      val config = DbConfig(pg.host, pg.mappedPort(5432), pg.username, Secret(pg.password), pg.databaseName, 4)
+      val config =
+        DbConfig(pg.host, pg.mappedPort(5432), pg.username, Secret(pg.password), pg.databaseName, 4)
       StatsStore.migrate[IO](config) >> StatsStore.pool[IO](config).use(pool => f(StatsStore.postgres(pool)))
 
   private val env      = EnvironmentKey.applyUnsafe("prod")
@@ -63,10 +64,12 @@ class StatsStoreSuite extends CatsEffectSuite with TestContainerForAll:
     withStore: store =>
       val flag = FlagKey.applyUnsafe("ordering")
       for
-        _      <- store.insertExposures(List(exposure("ordering", "dave", "on", at = 500)))
-        _      <- store.insertExposures(List(exposure("ordering", "dave", "off", at = 300))) // earlier, arrives later
-        _      <- store.insertExposures(List(exposure("ordering", "dave", "on", at = 900)))
-        _      <- store.insertMetrics(List(bought("x1", "dave", Some(1), 1000), bought("x1", "dave", Some(1), 1000)))
+        _ <- store.insertExposures(List(exposure("ordering", "dave", "on", at = 500)))
+        _ <-
+          store.insertExposures(List(exposure("ordering", "dave", "off", at = 300))) // earlier, arrives later
+        _ <- store.insertExposures(List(exposure("ordering", "dave", "on", at = 900)))
+        _ <-
+          store.insertMetrics(List(bought("x1", "dave", Some(1), 1000), bought("x1", "dave", Some(1), 1000)))
         _      <- store.insertMetrics(List(bought("x1", "dave", Some(1), 1000)))
         counts <- store.exposureCounts(env, flag)
         stats  <- store.variationStats(env, flag, purchase)
@@ -76,24 +79,33 @@ class StatsStoreSuite extends CatsEffectSuite with TestContainerForAll:
 
   test("report endpoint compares variations against the control"):
     withStore: store =>
-      val users = (1 to 400).toList
+      val users     = (1 to 400).toList
       val exposures = users.map(i => exposure("report", s"u$i", if i % 2 == 0 then "on" else "off", at = 1))
       // "on" converts 40%, "off" 20%
       val purchases = users.collect:
-        case i if i % 2 == 0 && i % 5 < 2 => bought(s"p$i", s"u$i", Some(20), at = 2)
+        case i if i % 2 == 0 && i % 5 < 2   => bought(s"p$i", s"u$i", Some(20), at = 2)
         case i if i % 2 == 1 && i % 10 == 1 => bought(s"p$i", s"u$i", Some(20), at = 2)
       val routes = ReportRoutes(store).routes.orNotFound
       for
         _        <- store.insertExposures(exposures)
         _        <- store.insertMetrics(purchases)
-        response <- routes.run(Request[IO](Method.GET, uri"/stats/v1/environments/prod/flags/report/metrics/purchase?weights=on:50,off:50"))
+        response <- routes.run(Request[IO](
+          Method.GET,
+          uri"/stats/v1/environments/prod/flags/report/metrics/purchase?weights=on:50,off:50"
+        ))
         body     <- response.as[String]
-        overview <- routes.run(Request[IO](Method.GET, uri"/stats/v1/environments/prod/flags/report")).flatMap(_.as[String])
+        overview <- routes.run(Request[IO](
+          Method.GET,
+          uri"/stats/v1/environments/prod/flags/report"
+        )).flatMap(_.as[String])
       yield
         assertEquals(response.status, Status.Ok, body)
         val report = decode[ExperimentReport](body).toOption.get
         assertEquals(report.control, "off")
-        assertEquals(report.variations.map(v => (v.variation, v.users, v.conversions)), List(("off", 200L, 40L), ("on", 200L, 80L)))
+        assertEquals(
+          report.variations.map(v => (v.variation, v.users, v.conversions)),
+          List(("off", 200L, 40L), ("on", 200L, 80L))
+        )
         val on = report.comparisons.head
         assert(on.significant, on)
         assertEquals(on.conversion.relativeLift.map(l => math.round(l * 100)), Some(100L))
@@ -104,8 +116,12 @@ class StatsStoreSuite extends CatsEffectSuite with TestContainerForAll:
     withStore: store =>
       val routes = ReportRoutes(store).routes.orNotFound
       for
-        missing <- routes.run(Request[IO](Method.GET, uri"/stats/v1/environments/prod/flags/nothing/metrics/purchase"))
-        bad     <- routes.run(Request[IO](Method.GET, uri"/stats/v1/environments/prod/flags/report/metrics/purchase?weights=on"))
+        missing <-
+          routes.run(Request[IO](Method.GET, uri"/stats/v1/environments/prod/flags/nothing/metrics/purchase"))
+        bad <- routes.run(Request[IO](
+          Method.GET,
+          uri"/stats/v1/environments/prod/flags/report/metrics/purchase?weights=on"
+        ))
       yield
         assertEquals(missing.status, Status.NotFound)
         assertEquals(bad.status, Status.BadRequest)

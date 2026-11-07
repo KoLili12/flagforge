@@ -69,13 +69,14 @@ private[sdk] object EventSink:
 
       def attempt(n: Int): F[Unit] =
         val retry: Option[FiniteDuration] => F[Unit] = hint =>
-          if n >= config.maxAttempts then logger.warn(s"Dropping ${batch.size} analytics events after $n attempts")
+          if n >= config.maxAttempts then
+            logger.warn(s"Dropping ${batch.size} analytics events after $n attempts")
           else Async[F].sleep(hint.getOrElse((200L << n).millis)) >> attempt(n + 1)
         client
           .run(request)
           .use: response =>
             response.status match
-              case s if s.isSuccess => Async[F].unit
+              case s if s.isSuccess       => Async[F].unit
               case Status.TooManyRequests =>
                 retry(response.headers.get[`Retry-After`].flatMap(_.retry.toOption).map(_.seconds))
               case s if s.responseClass == Status.ClientError =>
@@ -108,7 +109,9 @@ private[sdk] object EventSink:
       def exposed(exposure: Exposure): F[Unit] =
         val key = s"${exposure.flag}/${exposure.variation}/${exposure.contextKey}"
         seen
-          .modify(s => if s.contains(key) then (s, false) else ((if s.size >= maxSeen then Set.empty else s) + key, true))
+          .modify(s =>
+            if s.contains(key) then (s, false) else ((if s.size >= maxSeen then Set.empty else s) + key, true)
+          )
           .ifM(enqueue(Outbound.Exposed(exposure)), Async[F].unit)
 
       def tracked(event: MetricEvent): F[Unit] = enqueue(Outbound.Tracked(event))

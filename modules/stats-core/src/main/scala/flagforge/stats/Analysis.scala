@@ -12,8 +12,8 @@ final case class Comparison(
 /** Result of an experiment for one metric.
   *
   * @param adjustedAlpha
-  *   per-comparison significance level after the Bonferroni correction for comparing several treatments with the
-  *   same control
+  *   per-comparison significance level after the Bonferroni correction for comparing several treatments with
+  *   the same control
   */
 final case class ExperimentReport(
     control: String,
@@ -41,12 +41,12 @@ object Analysis:
       alpha: Double = 0.05
   ): Either[String, ExperimentReport] =
     stats.find(_.variation == control) match
-      case None => Left(s"control variation '$control' has no exposures")
+      case None               => Left(s"control variation '$control' has no exposures")
       case Some(controlStats) =>
         val treatments    = stats.filterNot(_.variation == control)
         val adjustedAlpha = alpha / math.max(1, treatments.size)
         val confidence    = 1 - adjustedAlpha
-        val comparisons = treatments.map: t =>
+        val comparisons   = treatments.map: t =>
           val conversion = HypothesisTests.twoProportions(controlStats, t, confidence)
           val mean       = HypothesisTests.welch(controlStats, t, confidence)
           Comparison(t.variation, conversion, mean, significant = conversion.pValue < adjustedAlpha)

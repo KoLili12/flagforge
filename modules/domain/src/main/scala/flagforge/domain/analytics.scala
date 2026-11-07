@@ -2,8 +2,8 @@ package flagforge.domain
 
 import io.circe.derivation.ConfiguredCodec
 
-/** A context was served a variation. The first exposure of a context to a flag assigns it to that variation for
-  * experiment analysis.
+/** A context was served a variation. The first exposure of a context to a flag assigns it to that variation
+  * for experiment analysis.
   *
   * @param timestamp
   *   epoch millis on the SDK side; metric events are attributed to exposures that happened before them

@@ -58,5 +58,6 @@ object LocalEvaluation:
           case None       => FlagResult(flag.default, None, evaluation.reason)
           case Some(json) =>
             flag.read(json) match
-              case Some(value) => FlagResult(value, evaluation.variation, evaluation.reason, evaluation.flagVersion)
-              case None        => fallback(ErrorKind.WrongType, s"unexpected value ${json.noSpaces}")
+              case Some(value) =>
+                FlagResult(value, evaluation.variation, evaluation.reason, evaluation.flagVersion)
+              case None => fallback(ErrorKind.WrongType, s"unexpected value ${json.noSpaces}")

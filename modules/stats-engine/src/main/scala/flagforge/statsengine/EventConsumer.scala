@@ -8,8 +8,8 @@ import org.typelevel.log4cats.LoggerFactory
 
 import scala.concurrent.duration.*
 
-/** Consumer group that stores analytics events. Offsets are committed only after a batch is written, and writes
-  * are idempotent: at-least-once delivery without double counting. Instances share the partitions.
+/** Consumer group that stores analytics events. Offsets are committed only after a batch is written, and
+  * writes are idempotent: at-least-once delivery without double counting. Instances share the partitions.
   */
 final class EventConsumer[F[_]: Async: LoggerFactory](kafka: KafkaConfig, store: StatsStore[F]):
   private val logger = LoggerFactory[F].getLogger
@@ -28,9 +28,11 @@ final class EventConsumer[F[_]: Async: LoggerFactory](kafka: KafkaConfig, store:
       .records
       .groupWithin(2000, 250.millis)
       .evalMap: chunk =>
-        val records = chunk.toList
+        val records                                                        = chunk.toList
         def decoded[A](topic: String, decode: String => Either[String, A]) =
-          records.filter(_.record.topic == topic).map(r => decode(r.record.value).leftMap(e => s"${r.offset}: $e"))
+          records.filter(_.record.topic == topic).map(r =>
+            decode(r.record.value).leftMap(e => s"${r.offset}: $e")
+          )
         val exposures = decoded(AnalyticsTopics.Exposures, AnalyticsTopics.decodeExposure)
         val metrics   = decoded(AnalyticsTopics.Metrics, AnalyticsTopics.decodeMetric)
         val errors    = exposures.collect { case Left(e) => e } ++ metrics.collect { case Left(e) => e }

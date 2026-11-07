@@ -10,7 +10,12 @@ object Events:
   val prod: EnvironmentKey = EnvironmentKey.applyUnsafe("prod")
   val now: Long            = System.currentTimeMillis()
 
-  def exposure(user: String, flag: String = "checkout", variation: String = "on", env: EnvironmentKey = prod) =
+  def exposure(
+      user: String,
+      flag: String = "checkout",
+      variation: String = "on",
+      env: EnvironmentKey = prod
+  ) =
     Exposure(env, FlagKey.applyUnsafe(flag), VariationKey.applyUnsafe(variation), user, 1, now)
 
   def purchase(id: String, user: String, amount: Double = 10) =
@@ -51,7 +56,10 @@ class IngestServiceSuite extends CatsEffectSuite:
       yield
         assertEquals(first, IngestResult.Accepted(accepted = 3, duplicates = 2))
         assertEquals(second, IngestResult.Accepted(accepted = 0, duplicates = 5))
-        assertEquals(sent.flatMap(_.exposures).map(e => (e.contextKey, e.variation.value: String)), List(("u1", "on"), ("u2", "on")))
+        assertEquals(
+          sent.flatMap(_.exposures).map(e => (e.contextKey, e.variation.value: String)),
+          List(("u1", "on"), ("u2", "on"))
+        )
 
   test("invalid batches are rejected with every problem listed"):
     fixture().flatMap: f =>

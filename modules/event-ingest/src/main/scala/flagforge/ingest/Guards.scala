@@ -66,7 +66,7 @@ object Guards:
       limit: RateLimit,
       dedupTtl: FiniteDuration
   ): Resource[F, Guards[F]] =
-    val logger = LoggerFactory[F].getLoggerFromName("redis")
+    val logger   = LoggerFactory[F].getLoggerFromName("redis")
     given Log[F] = new Log[F]:
       def debug(msg: => String): F[Unit] = logger.debug(msg)
       def error(msg: => String): F[Unit] = logger.error(msg)
@@ -93,7 +93,12 @@ object Guards:
             if keys.isEmpty then Nil.pure[F]
             else
               redis
-                .eval(MarkSeen, ScriptOutputType.Multi[String], keys.map("seen:" + _), List(dedupTtl.toSeconds.toString))
+                .eval(
+                  MarkSeen,
+                  ScriptOutputType.Multi[String],
+                  keys.map("seen:" + _),
+                  List(dedupTtl.toSeconds.toString)
+                )
                 .map(_.map(_ == "1"))
 
           def forget(keys: List[String]): F[Unit] =
@@ -112,8 +117,10 @@ object Guards:
             else (m, RateDecision.Limited(1.second))
 
         def firstSeen(keys: List[String]): F[List[Boolean]] =
-          seen.modify(s => keys.foldLeft((s, List.empty[Boolean])) { case ((acc, out), k) =>
-            (acc + k, out :+ !acc.contains(k))
-          })
+          seen.modify(s =>
+            keys.foldLeft((s, List.empty[Boolean])) { case ((acc, out), k) =>
+              (acc + k, out :+ !acc.contains(k))
+            }
+          )
 
         def forget(keys: List[String]): F[Unit] = seen.update(_ -- keys)

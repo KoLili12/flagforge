@@ -22,14 +22,14 @@ import scala.util.Random
 /** An A/B test from start to finish, with a known true effect:
   *
   * admin API sets up a 50/50 rollout → SDK assigns 2000 simulated users and records exposures → users in `on`
-  * convert at 30%, in `off` at 20% → events flow through ingest and Kafka into stats-engine → the report must find
-  * the effect and must not raise a sample ratio mismatch.
+  * convert at 30%, in `off` at 20% → events flow through ingest and Kafka into stats-engine → the report must
+  * find the effect and must not raise a sample ratio mismatch.
   */
 class ExperimentSuite extends CatsEffectSuite:
 
   override val munitIOTimeout: Duration = 4.minutes
 
-  private val pipeline = ResourceSuiteLocalFixture("pipeline", Pipeline.resource)
+  private val pipeline       = ResourceSuiteLocalFixture("pipeline", Pipeline.resource)
   override def munitFixtures = List(pipeline)
 
   private val CheckoutV2 = Flag.bool("checkout-v2", default = false)
@@ -54,11 +54,15 @@ class ExperimentSuite extends CatsEffectSuite:
       )
     )
     calls.traverse_ { (method, path, body) =>
-      p.call(method, path, Some(body)).map((status, json) => assert(status.isSuccess, s"$path: $status $json"))
+      p.call(method, path, Some(body)).map((status, json) =>
+        assert(status.isSuccess, s"$path: $status $json")
+      )
     }
 
   private def report(p: Pipeline): IO[Option[ExperimentReport]] =
-    val uri = Uri.unsafeFromString("/stats/v1/environments/e2e-exp/flags/checkout-v2/metrics/purchase?weights=on:50,off:50")
+    val uri = Uri.unsafeFromString(
+      "/stats/v1/environments/e2e-exp/flags/checkout-v2/metrics/purchase?weights=on:50,off:50"
+    )
     p.stats.run(Request[IO](Method.GET, uri)).flatMap(_.as[String]).map(decode[ExperimentReport](_).toOption)
 
   test("a simulated A/B test is detected by the stats engine"):
@@ -70,7 +74,7 @@ class ExperimentSuite extends CatsEffectSuite:
       events = EventsConfig(Some(p.ingestUri), flushInterval = 200.millis)
     )
     for
-      _ <- setUpExperiment(p)
+      _           <- setUpExperiment(p)
       assignments <- FlagforgeClient
         .resource[IO](config)
         .use: client =>
@@ -94,7 +98,9 @@ class ExperimentSuite extends CatsEffectSuite:
         .lastOrError
         .timeout(90.seconds)
       _ <- IO.println(
-        f"[e2e] ${result.variations.map(v => f"${v.variation}: ${v.users} users, ${v.conversionRate * 100}%.1f%% conv").mkString(", ")}; " +
+        f"[e2e] ${result.variations.map(v =>
+            f"${v.variation}: ${v.users} users, ${v.conversionRate * 100}%.1f%% conv"
+          ).mkString(", ")}; " +
           f"p = ${result.comparisons.head.conversion.pValue}%.2e, SRM p = ${result.srm.pValue}%.2f"
       )
     yield
@@ -108,9 +114,16 @@ class ExperimentSuite extends CatsEffectSuite:
       assert(!result.srm.detected, result.srm)
 
   test("ingest drops repeated exposures and metric events"):
-    val p = pipeline()
+    val p     = pipeline()
     val batch = EventBatch(
-      List(Exposure(EnvironmentKey.applyUnsafe("e2e-dedup"), CheckoutV2.key, VariationKey.applyUnsafe("on"), "u1", 1, 1)),
+      List(Exposure(
+        EnvironmentKey.applyUnsafe("e2e-dedup"),
+        CheckoutV2.key,
+        VariationKey.applyUnsafe("on"),
+        "u1",
+        1,
+        1
+      )),
       List(MetricEvent("evt-1", EnvironmentKey.applyUnsafe("e2e-dedup"), Purchase, "u1", Some(5), 2))
     )
     EmberClientBuilder.default[IO].build.use: http =>

@@ -14,8 +14,8 @@ import org.http4s.dsl.Http4sDsl
   *
   *   - `GET /stats/v1/environments/{env}/flags/{flag}` — exposures per variation and the available metrics
   *   - `GET /stats/v1/environments/{env}/flags/{flag}/metrics/{metric}` — full report; query parameters:
-  *     `control` (default: `control`, then `off`, then the first variation), `weights` (configured split, e.g.
-  *     `on:50,off:50`, for the sample ratio mismatch check; default: equal), `alpha` (default 0.05)
+  *     `control` (default: `control`, then `off`, then the first variation), `weights` (configured split,
+  *     e.g. `on:50,off:50`, for the sample ratio mismatch check; default: equal), `alpha` (default 0.05)
   */
 final class ReportRoutes[F[_]: Concurrent](store: StatsStore[F]) extends Http4sDsl[F]:
 
@@ -42,13 +42,13 @@ final class ReportRoutes[F[_]: Concurrent](store: StatsStore[F]) extends Http4sD
     case GET -> `base` / Env(env) / "flags" / Flag(flag) / "metrics" / Metric(metric)
         :? ControlParam(control) +& WeightsParam(weights) +& AlphaParam(alpha) =>
       parseWeights(weights) match
-        case Left(error) => BadRequest(Json.obj("error" -> error.asJson))
+        case Left(error)     => BadRequest(Json.obj("error" -> error.asJson))
         case Right(expected) =>
           store.variationStats(env, flag, metric).flatMap: stats =>
             if stats.isEmpty then NotFound(Json.obj("error" -> s"no exposures for '$flag' in '$env'".asJson))
             else
               val variations = stats.map(_.variation)
-              val chosen = control
+              val chosen     = control
                 .orElse(List("control", "off").find(variations.contains))
                 .getOrElse(variations.min)
               Analysis.report(stats, chosen, expected, alpha.getOrElse(0.05)) match

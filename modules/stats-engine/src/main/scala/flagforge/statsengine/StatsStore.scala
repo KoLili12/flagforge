@@ -14,10 +14,18 @@ import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
 
-final case class DbConfig(host: String, port: Int, user: String, password: Secret[String], database: String, poolSize: Int):
+final case class DbConfig(
+    host: String,
+    port: Int,
+    user: String,
+    password: Secret[String],
+    database: String,
+    poolSize: Int
+):
   def jdbcUrl: String = s"jdbc:postgresql://$host:$port/$database"
 
-/** Raw analytics events in Postgres (schema `stats`). Writes are idempotent, so Kafka redelivery is harmless. */
+/** Raw analytics events in Postgres (schema `stats`). Writes are idempotent, so Kafka redelivery is harmless.
+  */
 trait StatsStore[F[_]]:
   def insertExposures(exposures: List[Exposure]): F[Unit]
   def insertMetrics(events: List[MetricEvent]): F[Unit]
@@ -28,17 +36,16 @@ trait StatsStore[F[_]]:
   /** Metrics reported by users exposed to `flag`. */
   def metrics(env: EnvironmentKey, flag: FlagKey): F[List[String]]
 
-  /** Sufficient statistics per variation. A metric event counts for a user only if it happened at or after the
-    * user's first exposure: what happened before cannot have been caused by the variation.
+  /** Sufficient statistics per variation. A metric event counts for a user only if it happened at or after
+    * the user's first exposure: what happened before cannot have been caused by the variation.
     */
   def variationStats(env: EnvironmentKey, flag: FlagKey, metric: MetricKey): F[List[VariationStats]]
 
 object StatsStore:
 
-  private val exposure: Encoder[Exposure] =
-    (text *: text *: text *: text *: int8 *: int8).contramap(e =>
-      (e.environment.value, e.flag.value, e.contextKey, e.variation.value, e.flagVersion, e.timestamp)
-    )
+  private val exposure: Encoder[Exposure] = (text *: text *: text *: text *: int8 *: int8).contramap(e =>
+    (e.environment.value, e.flag.value, e.contextKey, e.variation.value, e.flagVersion, e.timestamp)
+  )
 
   private val metricEvent: Encoder[MetricEvent] =
     (text *: text *: text *: text *: float8.opt *: int8).contramap(m =>
@@ -69,8 +76,9 @@ object StatsStore:
             WHERE e.environment = m.environment AND e.flag = $text AND e.context_key = m.context_key
           ) ORDER BY m.metric""".query(text)
 
-  /** Per user: the total metric value after exposure (an event without a value counts as 1); users without events
-    * contribute zeros, so `users` is everyone exposed and `conversions` everyone with at least one event.
+  /** Per user: the total metric value after exposure (an event without a value counts as 1); users without
+    * events contribute zeros, so `users` is everyone exposed and `conversions` everyone with at least one
+    * event.
     */
   private val stats: Query[(String, String, String), VariationStats] =
     sql"""SELECT e.variation,
@@ -94,7 +102,9 @@ object StatsStore:
     def insertExposures(exposures: List[Exposure]): F[Unit] =
       // Postgres rejects an upsert that touches the same row twice, so collapse duplicates first.
       val unique = exposures.groupBy(_.dedupKey).values.map(_.minBy(_.timestamp)).toList
-      unique.grouped(1000).toList.traverse_(chunk => pool.use(_.execute(StatsStore.insertExposures(chunk.size))(chunk)))
+      unique.grouped(1000).toList.traverse_(chunk =>
+        pool.use(_.execute(StatsStore.insertExposures(chunk.size))(chunk))
+      )
 
     def insertMetrics(events: List[MetricEvent]): F[Unit] =
       events.distinctBy(e => (e.environment, e.id)).grouped(1000).toList.traverse_ { chunk =>

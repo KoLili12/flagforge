@@ -32,13 +32,18 @@ class EventsSuite extends CatsEffectSuite:
       app = HttpRoutes
         .of[IO] {
           case GET -> Root / "sdk" / "v1" / "environments" / "prod" / "stream" =>
-            val put = ServerSentEvent(Some(ruleset(checkout(1, enabled = true)).asJson.noSpaces), Some("put"), Some(EventId("0")))
+            val put = ServerSentEvent(
+              Some(ruleset(checkout(1, enabled = true)).asJson.noSpaces),
+              Some("put"),
+              Some(EventId("0"))
+            )
             Ok(Stream.emit(put).covary[IO] ++ Stream.never[IO])
           case req @ POST -> Root / "events" / "v1" / "environments" / "prod" / "batch" =>
             failures.getAndUpdate(n => (n - 1).max(0)).flatMap:
               case n if n > 0 => ServiceUnavailable()
-              case _ =>
-                req.as[String].flatMap(body => received.update(_ :+ decode[EventBatch](body).toOption.get)) >> Accepted()
+              case _          =>
+                req.as[String].flatMap(body => received.update(_ :+ decode[EventBatch](body).toOption.get)) >>
+                  Accepted()
         }
         .orNotFound
       result <- EmberServerBuilder
@@ -70,8 +75,14 @@ class EventsSuite extends CatsEffectSuite:
         .flatMap(_ => received)
         .map: sent =>
           val exposures = sent.flatMap(_.exposures)
-          assertEquals(exposures.map(e => (e.contextKey, e.variation.value: String, e.flagVersion)), List(("user-1", "on", 1L), ("user-2", "on", 1L)))
-          assertEquals(sent.flatMap(_.metrics).map(m => (m.metric.value: String, m.value)), List(("purchase", Some(42.5))))
+          assertEquals(
+            exposures.map(e => (e.contextKey, e.variation.value: String, e.flagVersion)),
+            List(("user-1", "on", 1L), ("user-2", "on", 1L))
+          )
+          assertEquals(
+            sent.flatMap(_.metrics).map(m => (m.metric.value: String, m.value)),
+            List(("purchase", Some(42.5)))
+          )
 
   test("defaults are not exposures"):
     withServer(failFirst = 0): (config, received) =>

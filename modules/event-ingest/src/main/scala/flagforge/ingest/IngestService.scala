@@ -30,9 +30,9 @@ final case class IngestLimits(maxBatch: Int = 1000, maxClockSkew: FiniteDuration
 
 /** Validates, rate-limits and deduplicates a batch, then publishes what is new.
   *
-  * Deduplication happens before publishing; if publishing fails, the keys are released again so that the SDK's
-  * retry is not mistaken for a duplicate. Exposures are deduplicated per (environment, flag, context): only the first
-  * one matters for analysis. Metric events are deduplicated by their client-generated id.
+  * Deduplication happens before publishing; if publishing fails, the keys are released again so that the
+  * SDK's retry is not mistaken for a duplicate. Exposures are deduplicated per (environment, flag, context):
+  * only the first one matters for analysis. Metric events are deduplicated by their client-generated id.
   */
 final class IngestService[F[_]: MonadThrow: Clock](
     guards: Guards[F],
@@ -44,7 +44,7 @@ final class IngestService[F[_]: MonadThrow: Clock](
       validate(env, batch, now.toMillis) match
         case errors if errors.nonEmpty => IngestResult.Invalid(errors).pure[F]
         case _ if batch.isEmpty        => IngestResult.Accepted(0, 0).pure[F]
-        case _ =>
+        case _                         =>
           guards.acquire(s"$env/$clientKey", batch.size).flatMap:
             case RateDecision.Limited(retryAfter) => IngestResult.RateLimited(retryAfter).pure[F]
             case RateDecision.Allowed             => deduplicateAndPublish(env, batch)
@@ -56,18 +56,23 @@ final class IngestService[F[_]: MonadThrow: Clock](
     val keys      = exposures.map("exp:" + _.dedupKey) ++ metrics.map(m => s"met:$env/${m.id}")
     guards.firstSeen(keys).flatMap: fresh =>
       val (freshExposures, freshMetrics) = (fresh.take(exposures.size), fresh.drop(exposures.size))
-      val newExposures = exposures.zip(freshExposures).collect { case (e, true) => e }
-      val newMetrics   = metrics.zip(freshMetrics).collect { case (m, true) => m }
-      val claimed      = keys.zip(fresh).collect { case (k, true) => k }
+      val newExposures                   = exposures.zip(freshExposures).collect { case (e, true) => e }
+      val newMetrics                     = metrics.zip(freshMetrics).collect { case (m, true) => m }
+      val claimed                        = keys.zip(fresh).collect { case (k, true) => k }
       publisher
         .publish(newExposures, newMetrics)
         .onError(_ => guards.forget(claimed))
-        .as(IngestResult.Accepted(newExposures.size + newMetrics.size, batch.size - newExposures.size - newMetrics.size))
+        .as(IngestResult.Accepted(
+          newExposures.size + newMetrics.size,
+          batch.size - newExposures.size - newMetrics.size
+        ))
 
   private def validate(env: EnvironmentKey, batch: EventBatch, nowMillis: Long): List[String] =
     val latest = nowMillis + limits.maxClockSkew.toMillis
     List(
-      Option.when(batch.size > limits.maxBatch)(s"batch has ${batch.size} events, at most ${limits.maxBatch} allowed"),
+      Option.when(
+        batch.size > limits.maxBatch
+      )(s"batch has ${batch.size} events, at most ${limits.maxBatch} allowed"),
       Option.when((batch.exposures.map(_.environment) ++ batch.metrics.map(_.environment)).exists(_ != env))(
         s"all events must belong to environment '$env'"
       ),
@@ -78,5 +83,7 @@ final class IngestService[F[_]: MonadThrow: Clock](
       Option.when((batch.exposures.map(_.timestamp) ++ batch.metrics.map(_.timestamp)).exists(_ > latest))(
         "timestamps must not be in the future"
       ),
-      Option.when(batch.metrics.exists(_.value.exists(v => v.isNaN || v.isInfinite)))("metric values must be finite")
+      Option.when(
+        batch.metrics.exists(_.value.exists(v => v.isNaN || v.isInfinite))
+      )("metric values must be finite")
     ).flatten

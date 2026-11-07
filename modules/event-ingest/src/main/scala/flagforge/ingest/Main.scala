@@ -46,7 +46,10 @@ object IngestConfig:
 object IngestApp:
 
   def resource[F[_]: Async: LoggerFactory](config: IngestConfig): Resource[F, HttpApp[F]] =
-    require(config.limits.maxBatch <= config.rateLimit.capacity, "MAX_BATCH must not exceed RATE_LIMIT_CAPACITY")
+    require(
+      config.limits.maxBatch <= config.rateLimit.capacity,
+      "MAX_BATCH must not exceed RATE_LIMIT_CAPACITY"
+    )
     for
       _        <- Resource.eval(AnalyticsTopics.ensure[F](config.kafka))
       guards   <- Guards.redis[F](config.redisUri, config.rateLimit, config.dedupTtl)
@@ -57,8 +60,9 @@ object IngestApp:
   def server[F[_]: Async: Network: LoggerFactory](config: IngestConfig): Resource[F, Server] =
     for
       app    <- resource[F](config)
-      server <- EmberServerBuilder.default[F].withHost(config.host).withPort(config.port).withHttpApp(app).build
-      _      <- Resource.eval(LoggerFactory[F].getLogger.info(s"Event ingest on ${server.baseUri}"))
+      server <-
+        EmberServerBuilder.default[F].withHost(config.host).withPort(config.port).withHttpApp(app).build
+      _ <- Resource.eval(LoggerFactory[F].getLogger.info(s"Event ingest on ${server.baseUri}"))
     yield server
 
 object Main extends IOApp.Simple:

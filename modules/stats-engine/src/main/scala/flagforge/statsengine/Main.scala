@@ -40,11 +40,12 @@ object StatsConfig:
 object StatsApp:
 
   def resource[F[_]: Async: Network: Console: LoggerFactory](config: StatsConfig): Resource[F, HttpApp[F]] =
-    val logger = LoggerFactory[F].getLogger
-    def supervised(fa: F[Unit]): F[Unit] =
-      (fa >> logger.warn("Analytics consumer stopped, restarting"))
-        .handleErrorWith(e => logger.error(e)("Analytics consumer failed, restarting in 5s") >> Async[F].sleep(5.seconds))
-        .foreverM
+    val logger                           = LoggerFactory[F].getLogger
+    def supervised(fa: F[Unit]): F[Unit] = (fa >> logger.warn("Analytics consumer stopped, restarting"))
+      .handleErrorWith(e =>
+        logger.error(e)("Analytics consumer failed, restarting in 5s") >> Async[F].sleep(5.seconds)
+      )
+      .foreverM
     for
       _    <- Resource.eval(StatsStore.migrate[F](config.db))
       _    <- Resource.eval(AnalyticsTopics.ensure[F](config.kafka))
@@ -56,8 +57,9 @@ object StatsApp:
   def server[F[_]: Async: Network: Console: LoggerFactory](config: StatsConfig): Resource[F, Server] =
     for
       app    <- resource[F](config)
-      server <- EmberServerBuilder.default[F].withHost(config.host).withPort(config.port).withHttpApp(app).build
-      _      <- Resource.eval(LoggerFactory[F].getLogger.info(s"Stats engine on ${server.baseUri}"))
+      server <-
+        EmberServerBuilder.default[F].withHost(config.host).withPort(config.port).withHttpApp(app).build
+      _ <- Resource.eval(LoggerFactory[F].getLogger.info(s"Stats engine on ${server.baseUri}"))
     yield server
 
 object Main extends IOApp.Simple:

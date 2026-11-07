@@ -28,7 +28,8 @@ import scala.concurrent.duration.*
 /** The whole system wired together against real infrastructure:
   *
   *   - flags: admin API (in-process) → Postgres outbox → relay → Kafka → flag-delivery (HTTP) → SSE → SDK
-  *   - analytics: SDK → event-ingest (HTTP) → Redis dedup/limits → Kafka → stats-engine (in-process) → Postgres
+  *   - analytics: SDK → event-ingest (HTTP) → Redis dedup/limits → Kafka → stats-engine (in-process) →
+  *     Postgres
   */
 final case class Pipeline(
     admin: HttpApp[IO],
@@ -102,7 +103,7 @@ object Pipeline:
       )
       snapshots <- RedisSnapshotStore.resource[IO](redisUri)
       delivery  <- DeliveryApp.server[IO](deliveryConfig, snapshots)
-      ingest <- IngestApp.server[IO](
+      ingest    <- IngestApp.server[IO](
         IngestConfig(
           host"127.0.0.1",
           port"0",
