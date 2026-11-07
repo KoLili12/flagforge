@@ -37,13 +37,25 @@ object EnvironmentRepository:
     def create(env: Environment, actor: Actor): F[Unit] = pool.use: s =>
       s.transaction.surround:
         for
-          _     <- Journal.conflictOnDuplicate(s.execute(Sql.insert)(env), s"environment '${env.key}' already exists")
-          flags <- FlagRepository.Sql.definitions(s, includeArchived = true)
+          _ <- Journal.conflictOnDuplicate(
+            s.execute(Sql.insert)(env),
+            s"environment '${env.key}' already exists"
+          )
+          flags   <- FlagRepository.Sql.definitions(s, includeArchived = true)
           created <- flags.flatTraverse: definition =>
             FlagConfig.initial(definition.variations).toList.traverse: config =>
               s.execute(FlagRepository.Sql.insertConfig)((definition.key, env.key, config))
                 .as(definition -> FeatureFlag.from(definition, config, version = 1))
           events = created.collect:
             case (definition, flag) if !definition.archived => ChangeEvent.FlagUpdated(env.key, flag)
-          _ <- Journal.record(s, actor, Some(env.key), "environment", env.key.value, "created", env.asJson, events)
+          _ <- Journal.record(
+            s,
+            actor,
+            Some(env.key),
+            "environment",
+            env.key.value,
+            "created",
+            env.asJson,
+            events
+          )
         yield ()

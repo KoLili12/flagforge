@@ -9,8 +9,9 @@ class JsonFormatSuite extends munit.FunSuite:
   private def v(s: String) = VariationKey.applyUnsafe(s)
 
   test("Serve uses a flat 'type' discriminator"):
-    val serve: Serve = Serve.Rollout(List(WeightedVariation(v("on"), 25_000), WeightedVariation(v("off"), 75_000)))
-    val json         = serve.asJson
+    val serve: Serve =
+      Serve.Rollout(List(WeightedVariation(v("on"), 25_000), WeightedVariation(v("off"), 75_000)))
+    val json = serve.asJson
     assertEquals(json.hcursor.get[String]("type"), Right("rollout"))
     assertEquals(json.as[Serve], Right(serve))
 

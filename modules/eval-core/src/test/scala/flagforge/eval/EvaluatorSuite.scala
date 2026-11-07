@@ -31,7 +31,8 @@ class EvaluatorSuite extends munit.FunSuite:
     val flag = boolFlag("f").configured(
       _.copy(
         targets = List(Target(Off, Set("vip"))),
-        rules = List(Rule(rid("everyone"), List(clause("key", Operator.StartsWith, str(""))), Serve.Fixed(On)))
+        rules =
+          List(Rule(rid("everyone"), List(clause("key", Operator.StartsWith, str(""))), Serve.Fixed(On)))
       )
     )
     assertEquals(eval(ruleset(flag), "f", ctx("vip")).reason, Reason.TargetMatch)
@@ -42,7 +43,11 @@ class EvaluatorSuite extends munit.FunSuite:
     val flag = stringFlag("plan", "free", "pro", "enterprise").configured(
       _.copy(rules =
         List(
-          Rule(rid("big"), List(clause("seats", Operator.GreaterThanOrEqual, num(100))), Serve.Fixed(vk("enterprise"))),
+          Rule(
+            rid("big"),
+            List(clause("seats", Operator.GreaterThanOrEqual, num(100))),
+            Serve.Fixed(vk("enterprise"))
+          ),
           Rule(rid("paid"), List(clause("seats", Operator.GreaterThan, num(1))), Serve.Fixed(vk("pro")))
         )
       )
@@ -63,8 +68,14 @@ class EvaluatorSuite extends munit.FunSuite:
       Serve.Fixed(Off)
     )
     val rs = ruleset(boolFlag("f").configured(_.copy(rules = List(rule))))
-    assertEquals(eval(rs, "f", ctx("a", "country" -> str("KZ"), "platform" -> str("ios"))).variation, Some(Off))
-    assertEquals(eval(rs, "f", ctx("a", "country" -> str("KZ"), "platform" -> str("web"))).variation, Some(On))
+    assertEquals(
+      eval(rs, "f", ctx("a", "country" -> str("KZ"), "platform" -> str("ios"))).variation,
+      Some(Off)
+    )
+    assertEquals(
+      eval(rs, "f", ctx("a", "country" -> str("KZ"), "platform" -> str("web"))).variation,
+      Some(On)
+    )
 
   test("array attributes match if any element matches"):
     val rule = Rule(rid("r"), List(clause("groups", Operator.In, str("beta"))), Serve.Fixed(Off))
@@ -73,8 +84,12 @@ class EvaluatorSuite extends munit.FunSuite:
     assertEquals(eval(rs, "f", user).variation, Some(Off))
 
   test("negated clause inverts the match but a missing attribute never matches"):
-    val rule = Rule(rid("not-ru"), List(clause("country", Operator.In, str("RU")).copy(negate = true)), Serve.Fixed(Off))
-    val rs   = ruleset(boolFlag("f").configured(_.copy(rules = List(rule))))
+    val rule = Rule(
+      rid("not-ru"),
+      List(clause("country", Operator.In, str("RU")).copy(negate = true)),
+      Serve.Fixed(Off)
+    )
+    val rs = ruleset(boolFlag("f").configured(_.copy(rules = List(rule))))
     assertEquals(eval(rs, "f", ctx("a", "country" -> str("DE"))).variation, Some(Off))
     assertEquals(eval(rs, "f", ctx("a", "country" -> str("RU"))).variation, Some(On))
     assertEquals(eval(rs, "f", ctx("a")).variation, Some(On))
@@ -118,7 +133,9 @@ class EvaluatorSuite extends munit.FunSuite:
 
   test("rollout reports inRollout and buckets by a custom attribute"):
     val flag = boolFlag("f").configured(
-      _.copy(fallthrough = Serve.Rollout(List(WeightedVariation(On, 50_000), WeightedVariation(Off, 50_000)), Some("org")))
+      _.copy(fallthrough =
+        Serve.Rollout(List(WeightedVariation(On, 50_000), WeightedVariation(Off, 50_000)), Some("org"))
+      )
     )
     val rs     = ruleset(flag)
     val first  = eval(rs, "f", ctx("u1", "org" -> str("acme")))
@@ -133,6 +150,9 @@ class EvaluatorSuite extends munit.FunSuite:
       case other                                    => fail(s"expected malformed, got $other")
 
   test("evaluateAll evaluates every flag"):
-    val rs = ruleset(boolFlag("a"), boolFlag("b").configured(_.copy(enabled = false)))
+    val rs  = ruleset(boolFlag("a"), boolFlag("b").configured(_.copy(enabled = false)))
     val all = Evaluator.evaluateAll(rs, ctx("u"))
-    assertEquals(all.view.mapValues(_.value).toMap, Map(fk("a") -> Some(Json.True), fk("b") -> Some(Json.False)))
+    assertEquals(
+      all.view.mapValues(_.value).toMap,
+      Map(fk("a") -> Some(Json.True), fk("b") -> Some(Json.False))
+    )

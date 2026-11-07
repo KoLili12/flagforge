@@ -29,5 +29,6 @@ object codecs:
     (flagKey *: flagKind *: jsonb[List[Variation]] *: text *: int8 *: jsonb[FlagConfig]).to[FeatureFlag]
 
   /** The document column is authoritative for everything except the version. */
-  val segment: Codec[Segment] =
-    (jsonb[Segment] *: int8).imap((s, version) => s.copy(version = version))(s => (s, s.version))
+  val segment: Codec[Segment] = (jsonb[Segment] *: int8).imap((s, version) => s.copy(version = version))(s =>
+    (s, s.version)
+  )

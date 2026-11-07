@@ -9,15 +9,16 @@ import scala.util.matching.Regex
 /** Semantics of clause operators on JSON values. Type mismatches never match (and never throw). */
 object Operators:
 
-  /** Does the context value `actual` satisfy `operator` against one clause value `expected`? `InSegment` is not
-    * an attribute operator and is handled by the evaluator.
+  /** Does the context value `actual` satisfy `operator` against one clause value `expected`? `InSegment` is
+    * not an attribute operator and is handled by the evaluator.
     */
   def matches(operator: Operator, actual: Json, expected: Json): Boolean = operator match
-    case Operator.In                 => jsonEquals(actual, expected)
-    case Operator.Contains           => strings(actual, expected)(_.contains(_))
-    case Operator.StartsWith         => strings(actual, expected)(_.startsWith(_))
-    case Operator.EndsWith           => strings(actual, expected)(_.endsWith(_))
-    case Operator.Matches            => strings(actual, expected)((s, re) => regex(re).exists(_.findFirstIn(s).isDefined))
+    case Operator.In         => jsonEquals(actual, expected)
+    case Operator.Contains   => strings(actual, expected)(_.contains(_))
+    case Operator.StartsWith => strings(actual, expected)(_.startsWith(_))
+    case Operator.EndsWith   => strings(actual, expected)(_.endsWith(_))
+    case Operator.Matches    =>
+      strings(actual, expected)((s, re) => regex(re).exists(_.findFirstIn(s).isDefined))
     case Operator.LessThan           => numbers(actual, expected)(_ < _)
     case Operator.LessThanOrEqual    => numbers(actual, expected)(_ <= _)
     case Operator.GreaterThan        => numbers(actual, expected)(_ > _)

@@ -12,6 +12,6 @@ object Actor:
 sealed abstract class AdminError(msg: String) extends Exception(msg) with NoStackTrace
 
 object AdminError:
-  final case class NotFound(message: String)                       extends AdminError(message)
-  final case class Conflict(message: String)                       extends AdminError(message)
-  final case class Invalid(message: String, errors: List[String])  extends AdminError(message)
+  final case class NotFound(message: String)                      extends AdminError(message)
+  final case class Conflict(message: String)                      extends AdminError(message)
+  final case class Invalid(message: String, errors: List[String]) extends AdminError(message)

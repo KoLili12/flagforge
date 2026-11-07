@@ -24,7 +24,9 @@ object SegmentRepository:
 
   private object Sql:
     val selectAll: Query[EnvironmentKey, Segment] =
-      sql"SELECT segment, version FROM segments WHERE environment = $environmentKey ORDER BY key".query(segment)
+      sql"SELECT segment, version FROM segments WHERE environment = $environmentKey ORDER BY key".query(
+        segment
+      )
 
     val selectOne: Query[(EnvironmentKey, SegmentKey), Segment] =
       sql"SELECT segment, version FROM segments WHERE environment = $environmentKey AND key = $segmentKey"

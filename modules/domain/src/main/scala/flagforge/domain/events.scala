@@ -3,8 +3,8 @@ package flagforge.domain
 import io.circe.derivation.ConfiguredCodec
 
 /** Change of the data plane state, published to the `flag-changes` Kafka topic through the transactional
-  * outbox. The topic is log-compacted by [[ChangeEvent.compactionKey]], so it always holds the latest state of
-  * every flag and segment and the data plane can bootstrap by reading it from the beginning.
+  * outbox. The topic is log-compacted by [[ChangeEvent.compactionKey]], so it always holds the latest state
+  * of every flag and segment and the data plane can bootstrap by reading it from the beginning.
   */
 enum ChangeEvent derives ConfiguredCodec:
   case FlagUpdated(environment: EnvironmentKey, flag: FeatureFlag)

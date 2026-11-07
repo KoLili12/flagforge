@@ -14,7 +14,14 @@ object Fixtures:
   val Off: VariationKey = vk("off")
 
   def boolFlag(key: String, config: FlagConfig = FlagConfig(true, Off, Serve.Fixed(On))): FeatureFlag =
-    FeatureFlag(fk(key), FlagKind.Boolean, List(Variation(On, Json.True), Variation(Off, Json.False)), "salt", 1, config)
+    FeatureFlag(
+      fk(key),
+      FlagKind.Boolean,
+      List(Variation(On, Json.True), Variation(Off, Json.False)),
+      "salt",
+      1,
+      config
+    )
 
   def stringFlag(key: String, values: String*): FeatureFlag =
     FeatureFlag(

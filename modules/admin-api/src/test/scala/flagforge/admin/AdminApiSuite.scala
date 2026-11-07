@@ -17,7 +17,8 @@ class AdminApiSuite extends PostgresSuite:
     withContainers(pg => AdminApp.httpApp[IO](dbConfig(pg)).use(f))
 
   private def call(app: HttpApp[IO], method: Method, path: String, body: Option[Json] = None): IO[Response] =
-    val base = Request[IO](method, Uri.unsafeFromString(path)).putHeaders(Header.Raw(ci"X-Actor", "test-suite"))
+    val base =
+      Request[IO](method, Uri.unsafeFromString(path)).putHeaders(Header.Raw(ci"X-Actor", "test-suite"))
     val request = body.fold(base)(json =>
       base.withEntity(json.noSpaces).withContentType(`Content-Type`(MediaType.application.json))
     )
@@ -52,13 +53,25 @@ class AdminApiSuite extends PostgresSuite:
     }"""
 
   private def evaluate(app: HttpApp[IO], country: String): IO[Json] =
-    call(app, Method.POST, "/api/v1/environments/production/evaluate", Some(json"""{"key": "user-1", "attributes": {"country": $country}}"""))
-      .map(_.body.asArray.flatMap(_.find(_.at("flag") == Json.fromString("new-checkout"))).getOrElse(Json.Null))
+    call(
+      app,
+      Method.POST,
+      "/api/v1/environments/production/evaluate",
+      Some(json"""{"key": "user-1", "attributes": {"country": $country}}""")
+    )
+      .map(
+        _.body.asArray.flatMap(_.find(_.at("flag") == Json.fromString("new-checkout"))).getOrElse(Json.Null)
+      )
 
   test("full flag lifecycle over HTTP"):
     withApp: app =>
       for
-        env <- call(app, Method.POST, "/api/v1/environments", Some(json"""{"key": "production", "name": "Production"}"""))
+        env <- call(
+          app,
+          Method.POST,
+          "/api/v1/environments",
+          Some(json"""{"key": "production", "name": "Production"}""")
+        )
         _ = assertEquals(env.status, Status.Created)
 
         created <- call(app, Method.POST, "/api/v1/flags", Some(checkoutFlag))
@@ -69,7 +82,8 @@ class AdminApiSuite extends PostgresSuite:
         _ = assertEquals(initial.at("value"), Json.False, "a new flag starts disabled")
         _ = assertEquals(initial.at("reason", "type"), Json.fromString("off"))
 
-        updated <- call(app, Method.PUT, "/api/v1/environments/production/flags/new-checkout", Some(checkoutConfig(1)))
+        updated <-
+          call(app, Method.PUT, "/api/v1/environments/production/flags/new-checkout", Some(checkoutConfig(1)))
         _ = assertEquals(updated.status, Status.Ok, updated.body)
         _ = assertEquals(updated.body.at("version"), Json.fromLong(2))
 
@@ -80,7 +94,8 @@ class AdminApiSuite extends PostgresSuite:
         _ = assertEquals(de.at("value"), Json.False)
         _ = assertEquals(de.at("reason", "type"), Json.fromString("fallthrough"))
 
-        stale <- call(app, Method.PUT, "/api/v1/environments/production/flags/new-checkout", Some(checkoutConfig(1)))
+        stale <-
+          call(app, Method.PUT, "/api/v1/environments/production/flags/new-checkout", Some(checkoutConfig(1)))
         _ = assertEquals(stale.status, Status.Conflict)
 
         invalid <- call(
@@ -92,7 +107,12 @@ class AdminApiSuite extends PostgresSuite:
         _ = assertEquals(invalid.status, Status.UnprocessableContent)
         _ = assert(invalid.body.at("errors").noSpaces.contains("unknown variation 'ghost'"), invalid.body)
 
-        killed <- call(app, Method.POST, "/api/v1/environments/production/flags/new-checkout/toggle", Some(json"""{"enabled": false}"""))
+        killed <- call(
+          app,
+          Method.POST,
+          "/api/v1/environments/production/flags/new-checkout/toggle",
+          Some(json"""{"enabled": false}""")
+        )
         _ = assertEquals(killed.body.at("config", "enabled"), Json.False)
         afterKill <- evaluate(app, "RU")
         _ = assertEquals(afterKill.at("value"), Json.False)
@@ -107,11 +127,13 @@ class AdminApiSuite extends PostgresSuite:
         missingFlag <- call(app, Method.GET, "/api/v1/flags/does-not-exist")
         missingEnv  <- call(app, Method.GET, "/api/v1/environments/nowhere/flags")
         badKey      <- call(app, Method.GET, "/api/v1/flags/Not%20A%20Key")
-        badFlag <- call(
+        badFlag     <- call(
           app,
           Method.POST,
           "/api/v1/flags",
-          Some(json"""{"key": "broken", "name": "Broken", "kind": "boolean", "variations": [{"key": "yes", "value": "yes"}]}""")
+          Some(
+            json"""{"key": "broken", "name": "Broken", "kind": "boolean", "variations": [{"key": "yes", "value": "yes"}]}"""
+          )
         )
       yield
         assertEquals(missingFlag.status, Status.NotFound)

@@ -17,7 +17,9 @@ class BucketingSuite extends munit.ScalaCheckSuite:
     }
 
   property("bucketing is deterministic"):
-    forAll(Gen.alphaStr, contextKey)((flag, key) => Bucketing.bucket(flag, "s", key) == Bucketing.bucket(flag, "s", key))
+    forAll(Gen.alphaStr, contextKey)((flag, key) =>
+      Bucketing.bucket(flag, "s", key) == Bucketing.bucket(flag, "s", key)
+    )
 
   property("pick always returns one of the rollout variations"):
     forAll(percent, Gen.choose(0, Weights.Total - 1)) { (onWeight, bucket) =>
@@ -37,9 +39,9 @@ class BucketingSuite extends munit.ScalaCheckSuite:
     }
 
   test("buckets are uniformly distributed (chi-squared, 10 bins)"):
-    val samples  = 50_000
-    val bins     = 10
-    val counts   = Array.fill(bins)(0)
+    val samples = 50_000
+    val bins    = 10
+    val counts  = Array.fill(bins)(0)
     (0 until samples).foreach: i =>
       counts(Bucketing.bucket("new-checkout", "salt", s"user-$i") * bins / Weights.Total) += 1
     val expected = samples.toDouble / bins
@@ -50,7 +52,9 @@ class BucketingSuite extends munit.ScalaCheckSuite:
   test("a 20% rollout serves ~20% of contexts"):
     val variations = List(WeightedVariation(On, 20_000), WeightedVariation(Off, 80_000))
     val samples    = 50_000
-    val on = (0 until samples).count(i => Bucketing.pick(variations, Bucketing.bucket("f", "s", s"u$i")).contains(On))
+    val on         = (0 until samples).count(i =>
+      Bucketing.pick(variations, Bucketing.bucket("f", "s", s"u$i")).contains(On)
+    )
     val share = on.toDouble / samples
     assert(math.abs(share - 0.2) < 0.01, s"share = $share")
 

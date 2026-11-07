@@ -24,11 +24,17 @@ final class Routes[F[_]: Async](service: AdminService[F]):
     archiveFlag.serverLogic((key, actor) => service.archiveFlag(key, actor).handled),
     listFlagConfigs.serverLogic(env => service.listFlagConfigs(env).handled),
     getFlagConfig.serverLogic((env, key) => service.getFlagConfig(env, key).handled),
-    updateFlagConfig.serverLogic((env, key, actor, request) => service.updateFlagConfig(env, key, request, actor).handled),
-    toggleFlag.serverLogic((env, key, actor, request) => service.toggleFlag(env, key, request.enabled, actor).handled),
+    updateFlagConfig.serverLogic((env, key, actor, request) =>
+      service.updateFlagConfig(env, key, request, actor).handled
+    ),
+    toggleFlag.serverLogic((env, key, actor, request) =>
+      service.toggleFlag(env, key, request.enabled, actor).handled
+    ),
     listSegments.serverLogic(env => service.listSegments(env).handled),
     getSegment.serverLogic((env, key) => service.getSegment(env, key).handled),
-    saveSegment.serverLogic((env, key, actor, request) => service.saveSegment(env, key, request, actor).handled),
+    saveSegment.serverLogic((env, key, actor, request) =>
+      service.saveSegment(env, key, request, actor).handled
+    ),
     ruleset.serverLogic(env => service.ruleset(env).handled),
     evaluate.serverLogic((env, context) => service.evaluate(env, context).handled),
     health.serverLogicSuccess(_ => "ok".pure[F])

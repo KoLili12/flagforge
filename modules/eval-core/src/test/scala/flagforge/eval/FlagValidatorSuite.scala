@@ -7,7 +7,11 @@ import io.circe.Json
 
 class FlagValidatorSuite extends munit.FunSuite:
 
-  private def errors(flag: FeatureFlag, others: List[FeatureFlag] = Nil, segments: Set[SegmentKey] = Set.empty) =
+  private def errors(
+      flag: FeatureFlag,
+      others: List[FeatureFlag] = Nil,
+      segments: Set[SegmentKey] = Set.empty
+  ) =
     FlagValidator
       .validateConfig(flag, others.map(f => f.key -> f).toMap, segments)
       .fold(_.toList, _ => List.empty[String])
@@ -18,7 +22,11 @@ class FlagValidatorSuite extends munit.FunSuite:
   test("a well-formed flag is valid"):
     val flag = boolFlag("f").configured(
       _.copy(
-        rules = List(Rule(rid("r"), List(clause("country", Operator.In, str("RU"))), rollout(On -> 30_000, Off -> 70_000)))
+        rules = List(Rule(
+          rid("r"),
+          List(clause("country", Operator.In, str("RU"))),
+          rollout(On -> 30_000, Off -> 70_000)
+        ))
       )
     )
     assertEquals(errors(flag), Nil)
@@ -36,11 +44,14 @@ class FlagValidatorSuite extends munit.FunSuite:
     assertError(errs, "duplicate variation keys")
 
   test("rollout weights must sum to 100%"):
-    assertError(errors(boolFlag("f").configured(_.copy(fallthrough = rollout(On -> 10, Off -> 10)))), "must sum to")
+    assertError(
+      errors(boolFlag("f").configured(_.copy(fallthrough = rollout(On -> 10, Off -> 10)))),
+      "must sum to"
+    )
 
   test("unknown variations everywhere are reported, all at once"):
     val ghost = vk("ghost")
-    val flag = boolFlag("f").configured(
+    val flag  = boolFlag("f").configured(
       _.copy(offVariation = ghost, targets = List(Target(ghost, Set("u"))), fallthrough = Serve.Fixed(ghost))
     )
     assertEquals(errors(flag).count(_.contains("unknown variation 'ghost'")), 3)
@@ -54,7 +65,12 @@ class FlagValidatorSuite extends munit.FunSuite:
     )
     val flag = boolFlag("f").configured(_.copy(rules = List(Rule(rid("r"), bad, Serve.Fixed(On)))))
     val errs = errors(flag)
-    List("numbers", "semantic versions", "regular expressions", "at least one value").foreach(assertError(errs, _))
+    List(
+      "numbers",
+      "semantic versions",
+      "regular expressions",
+      "at least one value"
+    ).foreach(assertError(errs, _))
 
   test("segment references must exist"):
     val rule = Rule(rid("r"), List(clause("", Operator.InSegment, str("beta"))), Serve.Fixed(On))
@@ -77,5 +93,6 @@ class FlagValidatorSuite extends munit.FunSuite:
     assertError(errors(a, others = List(b, c)), "cycle: a -> b -> c -> a")
 
   test("segments cannot nest segments"):
-    val segment = Segment(sk("s"), "S", rules = List(SegmentRule(List(clause("", Operator.InSegment, str("other"))))))
+    val segment =
+      Segment(sk("s"), "S", rules = List(SegmentRule(List(clause("", Operator.InSegment, str("other"))))))
     assert(FlagValidator.validateSegment(segment).isInvalid)

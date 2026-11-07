@@ -30,16 +30,18 @@ object FlagValidator:
         case FlagKind.Json => ().validNec
     ).combineAll
 
-  /** @param flags all flags of the environment (the new version of `flag` may or may not be among them)
-    * @param segments keys of all segments of the environment
+  /** @param flags
+    *   all flags of the environment (the new version of `flag` may or may not be among them)
+    * @param segments
+    *   keys of all segments of the environment
     */
   def validateConfig(
       flag: FeatureFlag,
       flags: Map[FlagKey, FeatureFlag],
       segments: Set[SegmentKey]
   ): Result[FeatureFlag] =
-    val config     = flag.config
-    val variations = flag.variations.map(_.key).toSet
+    val config                                         = flag.config
+    val variations                                     = flag.variations.map(_.key).toSet
     def knownVariation(v: VariationKey, where: String) =
       check(variations.contains(v), s"$where: unknown variation '$v'")
 
@@ -55,7 +57,10 @@ object FlagValidator:
         targetedKeys.distinct.size == targetedKeys.size,
         s"context keys targeted more than once: ${duplicates(targetedKeys).mkString(", ")}"
       ),
-      check(ruleIds.distinct.size == ruleIds.size, s"duplicate rule ids: ${duplicates(ruleIds).mkString(", ")}"),
+      check(
+        ruleIds.distinct.size == ruleIds.size,
+        s"duplicate rule ids: ${duplicates(ruleIds).mkString(", ")}"
+      ),
       config.rules.traverse_ { rule =>
         val where = s"rule '${rule.id}'"
         check(rule.clauses.nonEmpty, s"$where: needs at least one clause") |+|
@@ -76,7 +81,7 @@ object FlagValidator:
 
   private def validateServe(serve: Serve, variations: Set[VariationKey], where: String): Result[Unit] =
     serve match
-      case Serve.Fixed(v) => check(variations.contains(v), s"$where: unknown variation '$v'")
+      case Serve.Fixed(v)             => check(variations.contains(v), s"$where: unknown variation '$v'")
       case Serve.Rollout(weighted, _) =>
         val keys = weighted.map(_.variation)
         List(
@@ -96,12 +101,12 @@ object FlagValidator:
       allowSegments: Boolean,
       where: String
   ): Result[Unit] =
-    val prefix = s"$where, clause on '${clause.attribute}'"
+    val prefix                                      = s"$where, clause on '${clause.attribute}'"
     def allValues(p: Json => Boolean, what: String) =
       check(clause.values.forall(p), s"$prefix: all values must be $what")
 
     val operatorSpecific = clause.operator match
-      case Operator.In => ().validNec
+      case Operator.In                                                 => ().validNec
       case Operator.Contains | Operator.StartsWith | Operator.EndsWith =>
         allValues(_.isString, "strings")
       case Operator.Matches =>
@@ -122,13 +127,13 @@ object FlagValidator:
     check(clause.values.nonEmpty, s"$prefix: needs at least one value") |+| operatorSpecific
 
   private def validatePrerequisites(flag: FeatureFlag, flags: Map[FlagKey, FeatureFlag]): Result[Unit] =
-    val all     = flags.updated(flag.key, flag)
-    val prereqs = flag.config.prerequisites
+    val all             = flags.updated(flag.key, flag)
+    val prereqs         = flag.config.prerequisites
     val perPrerequisite = prereqs.traverse_ { p =>
       if p.flag == flag.key then s"flag cannot be its own prerequisite".invalidNec
       else
         all.get(p.flag) match
-          case None => s"prerequisite '${p.flag}' does not exist".invalidNec
+          case None        => s"prerequisite '${p.flag}' does not exist".invalidNec
           case Some(other) =>
             check(
               other.variation(p.variation).isDefined,
@@ -144,7 +149,8 @@ object FlagValidator:
       case None       => ().validNec
     perPrerequisite |+| noDuplicates |+| noCycles
 
-  /** DFS from `start` along prerequisite edges; returns the cycle path if `start` is reachable from itself. */
+  /** DFS from `start` along prerequisite edges; returns the cycle path if `start` is reachable from itself.
+    */
   private def findCycle(start: FlagKey, flags: Map[FlagKey, FeatureFlag]): Option[List[FlagKey]] =
     def edges(key: FlagKey) =
       flags.get(key).toList.flatMap(_.config.prerequisites.map(_.flag)).filterNot(_ == key)

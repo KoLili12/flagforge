@@ -14,8 +14,14 @@ object Endpoints:
   private val errors: EndpointOutput.OneOf[AdminError, AdminError] =
     oneOf[AdminError](
       oneOfVariant(StatusCode.NotFound, jsonBody[AdminError.NotFound].description("Entity does not exist")),
-      oneOfVariant(StatusCode.Conflict, jsonBody[AdminError.Conflict].description("Duplicate key or stale version")),
-      oneOfVariant(StatusCode.UnprocessableEntity, jsonBody[AdminError.Invalid].description("Validation failed"))
+      oneOfVariant(
+        StatusCode.Conflict,
+        jsonBody[AdminError.Conflict].description("Duplicate key or stale version")
+      ),
+      oneOfVariant(
+        StatusCode.UnprocessableEntity,
+        jsonBody[AdminError.Invalid].description("Validation failed")
+      )
     )
 
   private val actor: EndpointInput[Actor] =

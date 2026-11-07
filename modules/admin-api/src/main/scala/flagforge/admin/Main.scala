@@ -10,7 +10,7 @@ import fs2.io.net.Network
 import org.http4s.HttpApp
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
-import org.http4s.server.middleware.{Logger as HttpLogger}
+import org.http4s.server.middleware.Logger as HttpLogger
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
 
@@ -19,8 +19,8 @@ object AdminApp:
   /** Everything except the HTTP server: migrations, the session pool and the wired HTTP app. */
   def httpApp[F[_]: Async: Network: Console](db: DbConfig): Resource[F, HttpApp[F]] =
     for
-      _    <- Resource.eval(Database.migrate[F](db))
-      pool <- Database.pool[F](db)
+      _                     <- Resource.eval(Database.migrate[F](db))
+      pool                  <- Database.pool[F](db)
       given SecureRandom[F] <- Resource.eval(SecureRandom.javaSecuritySecureRandom[F])
       service = AdminService.make[F](
         EnvironmentRepository.postgres(pool),
@@ -32,7 +32,7 @@ object AdminApp:
   def server[F[_]: Async: Network: Console: LoggerFactory](config: AppConfig): Resource[F, Server] =
     val logger = LoggerFactory[F].getLogger
     for
-      app <- httpApp[F](config.db)
+      app    <- httpApp[F](config.db)
       server <- EmberServerBuilder
         .default[F]
         .withHost(config.http.host)

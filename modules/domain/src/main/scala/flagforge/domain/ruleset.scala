@@ -9,6 +9,6 @@ final case class Ruleset(
     segments: Map[SegmentKey, Segment] = Map.empty
 ) derives ConfiguredCodec:
 
-  def withFlag(flag: FeatureFlag): Ruleset          = copy(flags = flags.updated(flag.key, flag))
-  def withSegment(segment: Segment): Ruleset        = copy(segments = segments.updated(segment.key, segment))
-  def withoutFlag(key: FlagKey): Ruleset            = copy(flags = flags.removed(key))
+  def withFlag(flag: FeatureFlag): Ruleset   = copy(flags = flags.updated(flag.key, flag))
+  def withSegment(segment: Segment): Ruleset = copy(segments = segments.updated(segment.key, segment))
+  def withoutFlag(key: FlagKey): Ruleset     = copy(flags = flags.removed(key))

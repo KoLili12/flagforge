@@ -16,7 +16,8 @@ trait FlagRepository[F[_]]:
   def listDefinitions(includeArchived: Boolean): F[List[FlagDefinition]]
   def getDefinition(key: FlagKey): F[Option[FlagDefinition]]
 
-  /** Inserts the flag and `initial` config into every environment. Fails with `Conflict` if the key is taken. */
+  /** Inserts the flag and `initial` config into every environment. Fails with `Conflict` if the key is taken.
+    */
   def create(definition: FlagDefinition, initial: FlagConfig, actor: Actor): F[Unit]
 
   /** Hides the flag from all environments. Archived flags keep their key reserved. */
@@ -61,7 +62,9 @@ object FlagRepository:
             FROM flags f JOIN flag_configs c ON c.flag_key = f.key"""
 
     val selectFlags: Query[EnvironmentKey, FeatureFlag] =
-      sql"$flagSelect WHERE c.environment = $environmentKey AND NOT f.archived ORDER BY f.key".query(featureFlag)
+      sql"$flagSelect WHERE c.environment = $environmentKey AND NOT f.archived ORDER BY f.key".query(
+        featureFlag
+      )
 
     val selectFlag: Query[(EnvironmentKey, FlagKey), FeatureFlag] =
       sql"$flagSelect WHERE c.environment = $environmentKey AND f.key = $flagKey AND NOT f.archived"
@@ -98,14 +101,15 @@ object FlagRepository:
           _    <- envs.traverse_(env => s.execute(Sql.insertConfig)((definition.key, env, initial)))
           flag   = FeatureFlag.from(definition, initial, version = 1)
           events = envs.map(ChangeEvent.FlagUpdated(_, flag))
-          _ <- Journal.record(s, actor, None, "flag", definition.key.value, "created", definition.asJson, events)
+          _ <-
+            Journal.record(s, actor, None, "flag", definition.key.value, "created", definition.asJson, events)
         yield ()
 
     def archive(key: FlagKey, actor: Actor): F[Boolean] = pool.use: s =>
       s.transaction.surround:
         s.execute(Sql.archive)(key).flatMap:
           case Completion.Update(0) => false.pure[F]
-          case _ =>
+          case _                    =>
             for
               envs <- s.execute(Sql.selectEnvironments)
               events = envs.map(ChangeEvent.FlagArchived(_, key))
@@ -136,7 +140,7 @@ object FlagRepository:
               )
             )
           flag <- s.unique(Sql.selectFlag)((env, key))
-          _ <- Journal.record(
+          _    <- Journal.record(
             s,
             actor,
             Some(env),

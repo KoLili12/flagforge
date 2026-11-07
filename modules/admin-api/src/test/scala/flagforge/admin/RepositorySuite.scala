@@ -12,8 +12,8 @@ class RepositorySuite extends PostgresSuite:
 
   private val actor = Actor("test")
 
-  private def env(key: String)     = Environment(EnvironmentKey.applyUnsafe(key), key.capitalize)
-  private def vk(key: String)      = VariationKey.applyUnsafe(key)
+  private def env(key: String)      = Environment(EnvironmentKey.applyUnsafe(key), key.capitalize)
+  private def vk(key: String)       = VariationKey.applyUnsafe(key)
   private def boolFlag(key: String) = FlagDefinition(
     FlagKey.applyUnsafe(key),
     s"Flag $key",
@@ -26,12 +26,20 @@ class RepositorySuite extends PostgresSuite:
   private def outboxCount(pool: Resource[IO, Session[IO]], keyPattern: String): IO[Long] =
     pool.use(_.unique(sql"SELECT count(*) FROM outbox WHERE key LIKE $text".query(int8))(keyPattern))
 
-  private case class Repos(envs: EnvironmentRepository[IO], flags: FlagRepository[IO], segments: SegmentRepository[IO])
+  private case class Repos(
+      envs: EnvironmentRepository[IO],
+      flags: FlagRepository[IO],
+      segments: SegmentRepository[IO]
+  )
 
   private def withRepos[A](f: (Repos, Resource[IO, Session[IO]]) => IO[A]): IO[A] =
     withDatabase: pool =>
       f(
-        Repos(EnvironmentRepository.postgres(pool), FlagRepository.postgres(pool), SegmentRepository.postgres(pool)),
+        Repos(
+          EnvironmentRepository.postgres(pool),
+          FlagRepository.postgres(pool),
+          SegmentRepository.postgres(pool)
+        ),
         pool
       )
 
@@ -46,7 +54,10 @@ class RepositorySuite extends PostgresSuite:
         inB    <- repos.flags.get(EnvironmentKey.applyUnsafe("repo-b"), flag.key)
         events <- outboxCount(pool, "repo-_/flag/repo-new-flag")
       yield
-        assertEquals(inA.map(f => (f.version, f.config.enabled, f.config.offVariation)), Some((1L, false, vk("off"))))
+        assertEquals(
+          inA.map(f => (f.version, f.config.enabled, f.config.offVariation)),
+          Some((1L, false, vk("off")))
+        )
         assertEquals(inB.map(_.version), Some(1L))
         assertEquals(events, 2L)
 
@@ -61,8 +72,9 @@ class RepositorySuite extends PostgresSuite:
 
   test("duplicate keys are conflicts"):
     withRepos: (repos, _) =>
-      val flag = boolFlag("repo-dup")
-      val attempt = repos.flags.create(flag, initial(flag), actor) >> repos.flags.create(flag, initial(flag), actor)
+      val flag    = boolFlag("repo-dup")
+      val attempt = repos.flags.create(flag, initial(flag), actor) >>
+        repos.flags.create(flag, initial(flag), actor)
       interceptIO[AdminError.Conflict](attempt) >>
         interceptIO[AdminError.Conflict](repos.envs.create(env("repo-dup-env"), actor).replicateA_(2))
 
@@ -75,8 +87,8 @@ class RepositorySuite extends PostgresSuite:
         _       <- repos.envs.create(env("repo-locking-env"), actor)
         _       <- repos.flags.create(flag, initial(flag), actor)
         updated <- repos.flags.updateConfig(envKey, flag.key, expectedVersion = 1, enabled, actor)
-        _       <- interceptIO[AdminError.Conflict](repos.flags.updateConfig(envKey, flag.key, 1, enabled, actor))
-        events  <- outboxCount(pool, "repo-locking-env/flag/repo-locking")
+        _ <- interceptIO[AdminError.Conflict](repos.flags.updateConfig(envKey, flag.key, 1, enabled, actor))
+        events <- outboxCount(pool, "repo-locking-env/flag/repo-locking")
       yield
         assertEquals(updated.version, 2L)
         assert(updated.config.enabled)

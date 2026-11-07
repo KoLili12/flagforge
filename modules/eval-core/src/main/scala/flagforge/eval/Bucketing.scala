@@ -25,7 +25,7 @@ object Bucketing:
   def pick(variations: List[WeightedVariation], bucket: Int): Option[VariationKey] =
     @annotation.tailrec
     def loop(rest: List[WeightedVariation], upperBound: Int): Option[VariationKey] = rest match
-      case Nil                                     => variations.lastOption.map(_.variation)
+      case Nil                                        => variations.lastOption.map(_.variation)
       case wv :: _ if bucket < upperBound + wv.weight => Some(wv.variation)
-      case wv :: tail                              => loop(tail, upperBound + wv.weight)
+      case wv :: tail                                 => loop(tail, upperBound + wv.weight)
     loop(variations, 0)

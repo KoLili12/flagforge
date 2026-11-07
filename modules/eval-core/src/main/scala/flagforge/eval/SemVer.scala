@@ -1,7 +1,7 @@
 package flagforge.eval
 
-/** Minimal semantic version (https://semver.org) for `sem_ver_*` operators. Accepts a leading `v` and
-  * missing minor/patch parts (`"2"` == `"2.0.0"`); build metadata is ignored.
+/** Minimal semantic version (https://semver.org) for `sem_ver_*` operators. Accepts a leading `v` and missing
+  * minor/patch parts (`"2"` == `"2.0.0"`); build metadata is ignored.
   */
 final case class SemVer(major: Int, minor: Int, patch: Int, preRelease: List[String])
 

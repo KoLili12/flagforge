@@ -34,7 +34,7 @@ object Evaluator:
     def serveFixed(variation: VariationKey, reason: Reason): Evaluation =
       flag.variation(variation) match
         case Some(v) => Evaluation(flag.key, Some(v.key), Some(v.value), reason, Some(flag.version))
-        case None =>
+        case None    =>
           error(flag.key, Some(flag.version), ErrorKind.MalformedFlag, s"unknown variation '$variation'")
 
     def serve(s: Serve, reason: Boolean => Reason): Evaluation =
@@ -45,13 +45,15 @@ object Evaluator:
     if !config.enabled then serveFixed(config.offVariation, Reason.Off)
     else
       checkPrerequisites(ruleset, flag, context, visited) match
-        case Left(cycle)        => cycle
+        case Left(cycle)         => cycle
         case Right(Some(failed)) => serveFixed(config.offVariation, Reason.PrerequisiteFailed(failed))
-        case Right(None) =>
+        case Right(None)         =>
           config.targets.find(_.contextKeys.contains(context.key)) match
             case Some(target) => serveFixed(target.variation, Reason.TargetMatch)
-            case None =>
-              config.rules.zipWithIndex.find((rule, _) => rule.clauses.forall(clauseMatches(ruleset, _, context))) match
+            case None         =>
+              config.rules.zipWithIndex.find((rule, _) =>
+                rule.clauses.forall(clauseMatches(ruleset, _, context))
+              ) match
                 case Some((rule, index)) => serve(rule.serve, Reason.RuleMatch(rule.id, index, _))
                 case None                => serve(config.fallthrough, Reason.Fallthrough(_))
 
@@ -73,19 +75,20 @@ object Evaluator:
         if visited.contains(prerequisite.flag) then Left(cycle)
         else
           ruleset.flags.get(prerequisite.flag) match
-            case None => Right(Some(prerequisite.flag))
+            case None                   => Right(Some(prerequisite.flag))
             case Some(prerequisiteFlag) =>
               val result = evaluateFlag(ruleset, prerequisiteFlag, context, visited + prerequisite.flag)
               result.reason match
                 case Reason.Error(ErrorKind.PrerequisiteCycle, _) => Left(cycle)
-                case _ if prerequisiteFlag.config.enabled && result.variation.contains(prerequisite.variation) =>
+                case _
+                    if prerequisiteFlag.config.enabled && result.variation.contains(prerequisite.variation) =>
                   Right(None)
                 case _ => Right(Some(prerequisite.flag))
       case (done, _) => done
 
   private def resolve(flag: FeatureFlag, serve: Serve, context: EvaluationContext): Option[VariationKey] =
     serve match
-      case Serve.Fixed(variation) => Some(variation)
+      case Serve.Fixed(variation)              => Some(variation)
       case Serve.Rollout(variations, bucketBy) =>
         val bucketValue = bucketBy.flatMap(context.attribute).flatMap(bucketString).getOrElse(context.key)
         Bucketing.pick(variations, Bucketing.bucket(flag.key.value, flag.salt, bucketValue))

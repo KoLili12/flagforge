@@ -7,7 +7,11 @@ import io.circe.Json
 class OperatorsSuite extends munit.FunSuite:
 
   private def check(op: Operator, actual: Json, expected: Json, result: Boolean)(using munit.Location) =
-    assertEquals(Operators.matches(op, actual, expected), result, s"$op(${actual.noSpaces}, ${expected.noSpaces})")
+    assertEquals(
+      Operators.matches(op, actual, expected),
+      result,
+      s"$op(${actual.noSpaces}, ${expected.noSpaces})"
+    )
 
   test("in compares numbers by value"):
     check(Operator.In, Json.fromInt(1), Json.fromDoubleOrNull(1.0), true)

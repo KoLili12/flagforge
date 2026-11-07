@@ -21,7 +21,12 @@ trait AdminService[F[_]]:
 
   def listFlagConfigs(env: EnvironmentKey): F[List[FeatureFlag]]
   def getFlagConfig(env: EnvironmentKey, key: FlagKey): F[FeatureFlag]
-  def updateFlagConfig(env: EnvironmentKey, key: FlagKey, request: UpdateFlagConfigRequest, actor: Actor): F[FeatureFlag]
+  def updateFlagConfig(
+      env: EnvironmentKey,
+      key: FlagKey,
+      request: UpdateFlagConfigRequest,
+      actor: Actor
+  ): F[FeatureFlag]
 
   /** Kill switch: flips `enabled` without touching targeting. */
   def toggleFlag(env: EnvironmentKey, key: FlagKey, enabled: Boolean, actor: Actor): F[FeatureFlag]
@@ -64,8 +69,11 @@ object AdminService:
     def createFlag(request: CreateFlagRequest, actor: Actor): F[FlagDefinition] =
       for
         _       <- validOrRaise("flag")(FlagValidator.validateVariations(request.kind, request.variations))
-        initial <- FlagConfig.initial(request.variations).liftTo[F](AdminError.Invalid("invalid flag", List("no variations")))
-        salt    <- UUIDGen[F].randomUUID.map(_.toString.take(8))
+        initial <- FlagConfig.initial(request.variations).liftTo[F](AdminError.Invalid(
+          "invalid flag",
+          List("no variations")
+        ))
+        salt <- UUIDGen[F].randomUUID.map(_.toString.take(8))
         definition = FlagDefinition(
           request.key,
           request.name,
@@ -85,7 +93,8 @@ object AdminService:
       requireEnvironment(env) >> flags.list(env)
 
     def getFlagConfig(env: EnvironmentKey, key: FlagKey): F[FeatureFlag] =
-      requireEnvironment(env) >> flags.get(env, key).flatMap(_.fold(notFound(s"flag '$key' in '$env'"))(_.pure))
+      requireEnvironment(env) >>
+        flags.get(env, key).flatMap(_.fold(notFound(s"flag '$key' in '$env'"))(_.pure))
 
     def updateFlagConfig(
         env: EnvironmentKey,
@@ -98,7 +107,11 @@ object AdminService:
         all         <- flags.list(env)
         segmentKeys <- segments.list(env).map(_.map(_.key).toSet)
         candidate = current.copy(config = request.config)
-        _       <- validOrRaise("flag configuration")(FlagValidator.validateConfig(candidate, all.map(f => f.key -> f).toMap, segmentKeys))
+        _ <- validOrRaise("flag configuration")(FlagValidator.validateConfig(
+          candidate,
+          all.map(f => f.key -> f).toMap,
+          segmentKeys
+        ))
         updated <- flags.updateConfig(env, key, request.version, request.config, actor)
       yield updated
 
@@ -111,9 +124,15 @@ object AdminService:
       requireEnvironment(env) >> segments.list(env)
 
     def getSegment(env: EnvironmentKey, key: SegmentKey): F[Segment] =
-      requireEnvironment(env) >> segments.get(env, key).flatMap(_.fold(notFound(s"segment '$key' in '$env'"))(_.pure))
+      requireEnvironment(env) >>
+        segments.get(env, key).flatMap(_.fold(notFound(s"segment '$key' in '$env'"))(_.pure))
 
-    def saveSegment(env: EnvironmentKey, key: SegmentKey, request: SaveSegmentRequest, actor: Actor): F[Segment] =
+    def saveSegment(
+        env: EnvironmentKey,
+        key: SegmentKey,
+        request: SaveSegmentRequest,
+        actor: Actor
+    ): F[Segment] =
       for
         _       <- requireEnvironment(env)
         segment <- validOrRaise("segment")(FlagValidator.validateSegment(request.toSegment(key)))

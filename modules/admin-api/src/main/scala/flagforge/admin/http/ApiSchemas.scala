@@ -15,7 +15,10 @@ object ApiSchemas:
 
   // --- identifiers: plain strings in docs, validated when decoding path parameters ---
 
-  private def keyCodec[T](either: String => Either[String, T], show: T => String): Codec[String, T, CodecFormat.TextPlain] =
+  private def keyCodec[T](
+      either: String => Either[String, T],
+      show: T => String
+  ): Codec[String, T, CodecFormat.TextPlain] =
     Codec.string.mapDecode(s =>
       either(s).fold(err => DecodeResult.Error(s, IllegalArgumentException(err)), DecodeResult.Value(_))
     )(show)
@@ -60,7 +63,7 @@ object ApiSchemas:
 
   given flagMapSchema: Schema[Map[FlagKey, FeatureFlag]] = Schema.schemaForMap[FlagKey, FeatureFlag](_.value)
   given segmentMapSchema: Schema[Map[SegmentKey, Segment]] = Schema.schemaForMap[SegmentKey, Segment](_.value)
-  given Schema[Ruleset]                   = Schema.derived
+  given Schema[Ruleset]                                    = Schema.derived
 
   // --- requests ---
 
