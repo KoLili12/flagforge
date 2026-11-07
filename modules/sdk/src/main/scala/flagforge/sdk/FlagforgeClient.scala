@@ -15,7 +15,7 @@ import org.http4s.*
 import org.http4s.ServerSentEvent.EventId
 import org.http4s.client.Client
 import org.http4s.ember.client.EmberClientBuilder
-import org.http4s.headers.{`Last-Event-Id`, Accept}
+import org.http4s.headers.{`Last-Event-Id`, Accept, Connection}
 import org.typelevel.log4cats.LoggerFactory
 
 import scala.concurrent.duration.*
@@ -114,6 +114,8 @@ object FlagforgeClient:
       Stream.eval(lastEventId.get).flatMap: lastId =>
         val request = Request[F](Method.GET, streamUri)
           .putHeaders(Accept(MediaType.`text/event-stream`))
+          // A stream is never reusable; without this ember would try to drain it on close.
+          .putHeaders(Connection.close)
           .putHeaders(lastId.map(`Last-Event-Id`(_)).toList)
         http
           .stream(request)

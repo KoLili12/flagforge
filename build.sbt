@@ -130,7 +130,7 @@ lazy val sdk = project
 /** End-to-end tests of the whole pipeline against real Postgres, Kafka and Redis. */
 lazy val itTests = project
   .in(file("modules/it-tests"))
-  .dependsOn(adminApi % "test->test;compile->compile", flagDelivery, sdk)
+  .dependsOn(adminApi, flagDelivery, sdk)
   .settings(testSettings, serviceSettings)
   .settings(
     name           := "flagforge-it-tests",
