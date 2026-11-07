@@ -166,7 +166,9 @@ lazy val statsEngine = project
       "org.tpolecat"  %% "skunk-core"                 % V.skunk,
       "org.flywaydb"   % "flyway-core"                % V.flyway,
       "org.flywaydb"   % "flyway-database-postgresql" % V.flyway,
-      "org.postgresql" % "postgresql"                 % V.postgresql
+      "org.postgresql" % "postgresql"                 % V.postgresql,
+      "com.dimafeng"  %% "testcontainers-scala-munit"      % V.testcontainers % Test,
+      "com.dimafeng"  %% "testcontainers-scala-postgresql" % V.testcontainers % Test
     )
   )
 
