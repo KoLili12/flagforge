@@ -2,8 +2,8 @@
 
 Feature flags & A/B testing platform written in Scala 3 on the Typelevel stack.
 
-> Pet project, work in progress. Stages 1–2 (control plane, evaluation engine, real-time delivery, SDK) are done;
-> see the roadmap.
+> Pet project, work in progress. Stages 1–3 (control plane, evaluation engine, real-time delivery, SDK,
+> experiment analytics) are done; see the roadmap.
 
 ## Architecture
 
@@ -18,6 +18,12 @@ Feature flags & A/B testing platform written in Scala 3 on the Typelevel stack.
                Swagger UI                                   SSE: put / patch, id = offset
                                                                               ▼
                                                    your service + SDK (local evaluation, ~50 ms end-to-end)
+                                                              │ exposures + metric events (batched)
+                                                              ▼
+                     event-ingest ── Redis: token bucket + dedup (Lua) ──▶ Kafka: exposures, metric-events
+                                                                                  │ consumer group
+                                                                                  ▼
+                     stats-engine ──▶ Postgres (stats) ──▶ reports: z/Welch tests, CI, lift, SRM
 ```
 
 A change goes: REST call → one Postgres transaction (entity + audit + outbox row) → `NOTIFY` wakes the relay →
@@ -32,7 +38,10 @@ idempotent producer → compacted Kafka topic → every `flag-delivery` instance
 | `messaging` | JVM | The Kafka change feed: topic bootstrap, wire format, producer/consumer settings (fs2-kafka) |
 | `admin-api` | JVM | Control plane: tapir + http4s REST API over Postgres (skunk, Flyway), audit log, outbox relay |
 | `flag-delivery` | JVM | Data plane: consumes the feed, streams rulesets over SSE, Redis snapshots for warm starts |
-| `sdk` | JVM | Client library: live ruleset over SSE, typed flags, local evaluation, reconnects |
+| `stats-core` | JVM + JS | Statistics from scratch: distributions, z/Welch tests, CIs, SRM, Bonferroni |
+| `event-ingest` | JVM | Receives SDK analytics: Redis rate limiting and dedup (Lua), publishes to Kafka |
+| `stats-engine` | JVM | Consumes analytics into Postgres, serves experiment reports |
+| `sdk` | JVM | Client library: live ruleset over SSE, typed flags, local evaluation, exposure/metric tracking |
 | `it-tests` | JVM | End-to-end tests of the whole pipeline on real Postgres, Kafka and Redis (testcontainers) |
 
 ### Highlights
@@ -60,14 +69,29 @@ idempotent producer → compacted Kafka topic → every `flag-delivery` instance
   states instead of slowing down the others.
 - **Warm starts.** Instances snapshot their state to Redis and seek Kafka right after the snapshot offset.
 
+**Experiments**
+- **Statistics you can trust.** Special functions are implemented from scratch (JVM + Scala.js) and checked against
+  scipy; simulated A/A tests confirm a ~5% false-positive rate, A/B simulations confirm power.
+- **Correct attribution.** A metric event counts for a user only if it happened after their *first* exposure; the
+  earliest exposure wins regardless of Kafka delivery order. One SQL aggregation yields the sufficient statistics.
+- **Sample ratio mismatch** check against the configured split, Bonferroni correction for several treatments.
+- **Exactly-once effect from at-least-once parts.** Ingest dedups in Redis (and releases the keys if Kafka publishing
+  fails, so retries are not lost); stats-engine writes idempotently and commits offsets after writing.
+- **Shared rate limits.** A token bucket in a Lua script on the Redis clock: atomic across ingest instances, no
+  clock skew; `429` with `Retry-After`, which the SDK honours.
+- **End-to-end proof.** A test runs a real A/B experiment through every service: 2000 simulated users, a true
+  20% → 30% conversion effect, and asserts the report finds it without an SRM.
+
 **SDK**
 - `get` never touches the network and never throws: defaults plus a `Reason` on any problem.
 - Flag keys are checked **at compile time**: `Flag.bool("Bad Key", false)` does not compile.
 - Reconnects with exponential backoff and full jitter, resuming via `Last-Event-ID`.
+- Exposures are recorded automatically, `track` records business events; delivery is batched, never blocks the
+  application (bounded queue, drops on overflow) and flushes on close.
 
 ## Stack
 
-Scala 3 · cats-effect 3 · fs2 · fs2-kafka · redis4cats · http4s (Ember) · tapir (OpenAPI/Swagger) · skunk ·
+Scala 3 · cats-effect 3 · fs2 · fs2-kafka · redis4cats (Lua scripting) · http4s (Ember) · tapir (OpenAPI/Swagger) · skunk ·
 Flyway · circe · Iron · ciris · log4cats · munit + ScalaCheck · testcontainers · Scala.js
 
 ## Requirements
@@ -91,7 +115,9 @@ sbt scalafmtAll
 docker compose --profile full up -d --wait   # Postgres, Kafka (KRaft), Redis, Kafka UI on :8090
                                              # POSTGRES_PORT=55432 if 5432 is taken
 sbt adminApi/run                             # :8080, Swagger UI at /docs; DB_PORT=55432 accordingly
-REDIS_URI=redis://localhost:6379 sbt flagDelivery/run   # :8081 (use a second checkout/terminal or `java -cp`)
+REDIS_URI=redis://localhost:6379 sbt flagDelivery/run   # :8081
+sbt eventIngest/run                                      # :8083
+DB_PORT=55432 sbt statsEngine/run                        # :8082
 ```
 
 > Two `sbt` processes cannot run in the same directory at once. Either start the services from one sbt shell
@@ -102,6 +128,8 @@ REDIS_URI=redis://localhost:6379 sbt flagDelivery/run   # :8081 (use a second ch
 |---|---|
 | admin-api | `HTTP_HOST`, `HTTP_PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_POOL_SIZE`, `KAFKA_BOOTSTRAP_SERVERS`, `OUTBOX_RELAY_ENABLED`, `OUTBOX_BATCH_SIZE`, `OUTBOX_POLL_INTERVAL` |
 | flag-delivery | `HTTP_HOST`, `HTTP_PORT`, `KAFKA_BOOTSTRAP_SERVERS`, `REDIS_URI` (optional), `SSE_HEARTBEAT`, `SNAPSHOT_DEBOUNCE`, `MAX_RECENT_EVENTS` |
+| event-ingest | `HTTP_HOST`, `HTTP_PORT`, `KAFKA_BOOTSTRAP_SERVERS`, `REDIS_URI`, `RATE_LIMIT_CAPACITY`, `RATE_LIMIT_REFILL_PER_SECOND`, `DEDUP_TTL`, `MAX_BATCH` |
+| stats-engine | `HTTP_HOST`, `HTTP_PORT`, `DB_*` (as admin-api), `KAFKA_BOOTSTRAP_SERVERS` |
 
 ### Try it
 
@@ -140,13 +168,20 @@ import flagforge.sdk.*
 
 val NewCheckout = Flag.bool("new-checkout", default = false) // key validated at compile time
 
+val config = SdkConfig(
+  uri"http://localhost:8081",
+  EnvironmentKey.applyUnsafe("production"),
+  events = EventsConfig(uri = Some(uri"http://localhost:8083")) // enables experiment tracking
+)
+
 FlagforgeClient
-  .resource[IO](SdkConfig(uri"http://localhost:8081", EnvironmentKey.applyUnsafe("production")))
+  .resource[IO](config)
   .use { client =>
     val user = EvaluationContext("user-42", Map("country" -> Json.fromString("RU")))
     for
       _       <- client.awaitReady(5.seconds)
-      enabled <- client.get(NewCheckout, user)                  // local, no network call
+      enabled <- client.get(NewCheckout, user)                  // local, no network call; records an exposure
+      _       <- client.track(MetricKey("purchase"), user, Some(49.90))
       _       <- client.watch(NewCheckout, user)                // every change, pushed by the server
                    .evalMap(v => IO.println(s"new-checkout = $v"))
                    .compile.drain
@@ -165,12 +200,25 @@ FlagforgeClient
 Other endpoints: `GET /sdk/v1/environments/{env}/ruleset` (polling, `ETag`/`If-None-Match`),
 `POST /sdk/v1/environments/{env}/evaluate` (server-side evaluation), `GET /ready`, `GET /health`.
 
+### Experiment reports
+
+```bash
+# exposures per variation and the metrics seen for this flag
+curl localhost:8082/stats/v1/environments/production/flags/new-checkout
+
+# full report: conversion (z-test) and mean value (Welch) per variation vs control, CIs, lift, SRM
+curl 'localhost:8082/stats/v1/environments/production/flags/new-checkout/metrics/purchase?control=off&weights=on:30,off:70'
+```
+
+Ingest API used by the SDK: `POST localhost:8083/events/v1/environments/{env}/batch` with
+`{"exposures": [...], "metrics": [...]}` → `202 {"accepted": n, "duplicates": m}`, `400`, `429` + `Retry-After`, `503`.
+
 ## Roadmap
 
 | Stage | Scope | Status |
 |---|---|---|
 | 1 | Domain, evaluation engine, admin API over Postgres | ✅ |
 | 2 | Outbox relay → Kafka, `flag-delivery` with SSE + Redis warm starts, Scala SDK, end-to-end tests | ✅ |
-| 3 | Exposure tracking in the SDK, `event-ingest` (Redis dedup / rate limiting), `stats-engine` (z/t-tests, SRM) | ⏳ |
-| 4 | Traffic simulator, otel4s tracing, Grafana dashboards, Gatling load tests, Docker images | |
+| 3 | Exposure tracking in the SDK, `event-ingest` (Redis dedup / rate limiting), `stats-engine` (z/t-tests, SRM) | ✅ |
+| 4 | Traffic simulator, otel4s tracing, Grafana dashboards, Gatling load tests, Docker images | ⏳ |
 | 5 | Sequential testing (mSPRT), CUPED, Laminar UI, Kubernetes | |
