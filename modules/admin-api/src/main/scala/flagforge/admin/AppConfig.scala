@@ -4,6 +4,10 @@ import cats.effect.Async
 import cats.syntax.all.*
 import ciris.*
 import com.comcast.ip4s.{Host, Port}
+import flagforge.admin.relay.RelayConfig
+import flagforge.messaging.KafkaConfig
+
+import scala.concurrent.duration.*
 
 final case class HttpConfig(host: Host, port: Port)
 
@@ -17,7 +21,7 @@ final case class DbConfig(
 ):
   def jdbcUrl: String = s"jdbc:postgresql://$host:$port/$database"
 
-final case class AppConfig(http: HttpConfig, db: DbConfig)
+final case class AppConfig(http: HttpConfig, db: DbConfig, kafka: KafkaConfig, relay: RelayConfig)
 
 object AppConfig:
 
@@ -40,4 +44,14 @@ object AppConfig:
       env("DB_POOL_SIZE").as[Int].default(10)
     ).parMapN(DbConfig.apply)
 
-  def load[F[_]: Async]: F[AppConfig] = (http, db).parMapN(AppConfig.apply).load[F]
+  private val kafka: ConfigValue[Effect, KafkaConfig] =
+    env("KAFKA_BOOTSTRAP_SERVERS").default("localhost:9092").map(KafkaConfig(_))
+
+  private val relay: ConfigValue[Effect, RelayConfig] =
+    (
+      env("OUTBOX_RELAY_ENABLED").as[Boolean].default(true),
+      env("OUTBOX_BATCH_SIZE").as[Int].default(500),
+      env("OUTBOX_POLL_INTERVAL").as[FiniteDuration].default(2.seconds)
+    ).parMapN(RelayConfig(_, _, _))
+
+  def load[F[_]: Async]: F[AppConfig] = (http, db, kafka, relay).parMapN(AppConfig.apply).load[F]
