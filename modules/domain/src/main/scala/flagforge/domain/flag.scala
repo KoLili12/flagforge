@@ -80,6 +80,16 @@ final case class FlagConfig(
     rules: List[Rule] = Nil
 ) derives ConfiguredCodec
 
+object FlagConfig:
+  /** Configuration of a freshly created flag: disabled, serving the "false"-like variation. Once enabled it
+    * serves the first other variation to everyone.
+    */
+  def initial(variations: List[Variation]): Option[FlagConfig] =
+    for
+      off <- variations.find(_.value == Json.False).orElse(variations.lastOption).map(_.key)
+      on = variations.map(_.key).find(_ != off).getOrElse(off)
+    yield FlagConfig(enabled = false, offVariation = off, fallthrough = Serve.Fixed(on))
+
 /** Everything needed to evaluate a flag in one environment. This is what SDKs receive. */
 final case class FeatureFlag(
     key: FlagKey,
