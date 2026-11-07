@@ -17,4 +17,7 @@ object V {
   val munitScalacheck = "1.3.1"
   val munitCatsEffect = "2.2.1"
   val testcontainers  = "0.44.1"
+  val testcontainersJava = "2.0.3"
+  val fs2Kafka        = "3.9.1"
+  val redis4cats      = "2.0.6"
 }

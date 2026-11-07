@@ -12,9 +12,23 @@ lazy val testSettings = Seq(
   )
 )
 
+/** Settings for runnable JVM services. */
+lazy val serviceSettings = Seq(
+  run / fork  := true,
+  Test / fork := true,
+  libraryDependencies ++= Seq(
+    "org.typelevel" %% "cats-effect"       % V.catsEffect,
+    "is.cir"        %% "ciris"             % V.ciris,
+    "org.typelevel" %% "log4cats-slf4j"    % V.log4cats,
+    "ch.qos.logback" % "logback-classic"   % V.logback         % Runtime,
+    "org.typelevel" %% "munit-cats-effect" % V.munitCatsEffect % Test,
+    "ch.qos.logback" % "logback-classic"   % V.logback         % Test
+  )
+)
+
 lazy val root = project
   .in(file("."))
-  .aggregate(domain.jvm, domain.js, evalCore.jvm, evalCore.js, adminApi)
+  .aggregate(domain.jvm, domain.js, evalCore.jvm, evalCore.js, messaging, adminApi, flagDelivery, sdk, itTests)
   .settings(
     name           := "flagforge",
     publish / skip := true
@@ -43,18 +57,27 @@ lazy val evalCore = crossProject(JVMPlatform, JSPlatform)
   .settings(testSettings)
   .settings(name := "flagforge-eval-core")
 
-/** Control plane: CRUD for environments, flags and segments, backed by Postgres. */
-lazy val adminApi = project
-  .in(file("modules/admin-api"))
-  .dependsOn(evalCore.jvm)
+/** Kafka plumbing for the change feed shared by the producer (admin-api) and consumers (flag-delivery). */
+lazy val messaging = project
+  .in(file("modules/messaging"))
+  .dependsOn(domain.jvm)
   .settings(testSettings)
   .settings(
+    name := "flagforge-messaging",
+    libraryDependencies ++= Seq(
+      "com.github.fd4s" %% "fs2-kafka" % V.fs2Kafka
+    )
+  )
+
+/** Control plane: CRUD for environments, flags and segments, backed by Postgres; relays the outbox to Kafka. */
+lazy val adminApi = project
+  .in(file("modules/admin-api"))
+  .dependsOn(evalCore.jvm, messaging)
+  .settings(testSettings, serviceSettings)
+  .settings(
     name                := "flagforge-admin-api",
-    run / fork          := true,
-    Test / fork         := true,
     Compile / mainClass := Some("flagforge.admin.Main"),
     libraryDependencies ++= Seq(
-      "org.typelevel"               %% "cats-effect"                     % V.catsEffect,
       "org.http4s"                  %% "http4s-ember-server"             % V.http4s,
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server"             % V.tapir,
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe"                % V.tapir,
@@ -64,13 +87,55 @@ lazy val adminApi = project
       "org.flywaydb"                 % "flyway-core"                     % V.flyway,
       "org.flywaydb"                 % "flyway-database-postgresql"      % V.flyway,
       "org.postgresql"               % "postgresql"                      % V.postgresql,
-      "is.cir"                      %% "ciris"                           % V.ciris,
-      "org.typelevel"               %% "log4cats-slf4j"                  % V.log4cats,
-      "ch.qos.logback"               % "logback-classic"                 % V.logback         % Runtime,
-      "org.typelevel"               %% "munit-cats-effect"               % V.munitCatsEffect % Test,
-      "io.circe"                    %% "circe-literal"                   % V.circe           % Test,
-      "com.dimafeng"                %% "testcontainers-scala-munit"      % V.testcontainers  % Test,
-      "com.dimafeng"                %% "testcontainers-scala-postgresql" % V.testcontainers  % Test,
-      "ch.qos.logback"               % "logback-classic"                 % V.logback         % Test
+      "io.circe"                    %% "circe-literal"                   % V.circe          % Test,
+      "com.dimafeng"                %% "testcontainers-scala-munit"      % V.testcontainers % Test,
+      "com.dimafeng"                %% "testcontainers-scala-postgresql" % V.testcontainers % Test
+    )
+  )
+
+/** Data plane: consumes the change feed and streams rulesets to SDKs over Server-Sent Events. */
+lazy val flagDelivery = project
+  .in(file("modules/flag-delivery"))
+  .dependsOn(evalCore.jvm, messaging)
+  .settings(testSettings, serviceSettings)
+  .settings(
+    name                := "flagforge-flag-delivery",
+    Compile / mainClass := Some("flagforge.delivery.Main"),
+    libraryDependencies ++= Seq(
+      "org.http4s"     %% "http4s-ember-server" % V.http4s,
+      "org.http4s"     %% "http4s-dsl"          % V.http4s,
+      "org.http4s"     %% "http4s-circe"        % V.http4s,
+      "dev.profunktor" %% "redis4cats-effects"  % V.redis4cats
+    )
+  )
+
+/** Scala SDK: keeps a live ruleset over SSE and evaluates flags locally. */
+lazy val sdk = project
+  .in(file("modules/sdk"))
+  .dependsOn(evalCore.jvm)
+  .settings(testSettings)
+  .settings(
+    name := "flagforge-sdk",
+    libraryDependencies ++= Seq(
+      "org.typelevel" %% "cats-effect"         % V.catsEffect,
+      "org.http4s"    %% "http4s-ember-client" % V.http4s,
+      "org.typelevel" %% "log4cats-core"       % V.log4cats,
+      "org.typelevel" %% "munit-cats-effect"   % V.munitCatsEffect % Test
+    )
+  )
+
+/** End-to-end tests of the whole pipeline against real Postgres, Kafka and Redis. */
+lazy val itTests = project
+  .in(file("modules/it-tests"))
+  .dependsOn(adminApi % "test->test;compile->compile", flagDelivery, sdk)
+  .settings(testSettings, serviceSettings)
+  .settings(
+    name           := "flagforge-it-tests",
+    publish / skip := true,
+    libraryDependencies ++= Seq(
+      "org.http4s"         %% "http4s-ember-client"             % V.http4s,
+      "org.testcontainers"  % "testcontainers-kafka"            % V.testcontainersJava % Test,
+      "com.dimafeng"       %% "testcontainers-scala-postgresql" % V.testcontainers     % Test,
+      "io.circe"           %% "circe-literal"                   % V.circe              % Test
     )
   )

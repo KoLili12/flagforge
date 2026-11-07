@@ -16,5 +16,10 @@ enum ChangeEvent derives ConfiguredCodec:
     case FlagArchived(env, key)       => s"$env/flag/$key"
     case SegmentUpdated(env, segment) => s"$env/segment/${segment.key}"
 
+  def environmentKey: EnvironmentKey = this match
+    case FlagUpdated(env, _)    => env
+    case FlagArchived(env, _)   => env
+    case SegmentUpdated(env, _) => env
+
 object ChangeEvent:
   val Topic = "flagforge.flag-changes"

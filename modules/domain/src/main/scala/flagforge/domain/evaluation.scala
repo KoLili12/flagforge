@@ -6,6 +6,9 @@ import io.circe.derivation.{ConfiguredCodec, ConfiguredEnumCodec}
 enum ErrorKind derives ConfiguredEnumCodec:
   case FlagNotFound, MalformedFlag, PrerequisiteCycle
 
+  /** SDK-side errors: no ruleset received yet / the served value has a different type than requested. */
+  case ClientNotReady, WrongType
+
 /** Why a particular variation was served. Invaluable for debugging targeting and for experiment analysis. */
 enum Reason derives ConfiguredCodec:
   case Off
