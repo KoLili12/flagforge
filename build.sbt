@@ -68,6 +68,7 @@ lazy val adminApi = project
       "org.typelevel"                 %% "log4cats-slf4j"          % V.log4cats,
       "ch.qos.logback"                 % "logback-classic"         % V.logback  % Runtime,
       "org.typelevel"                 %% "munit-cats-effect"       % V.munitCatsEffect % Test,
+      "io.circe"                      %% "circe-literal"           % V.circe % Test,
       "com.dimafeng"                  %% "testcontainers-scala-munit"      % V.testcontainers % Test,
       "com.dimafeng"                  %% "testcontainers-scala-postgresql" % V.testcontainers % Test,
       "ch.qos.logback"                 % "logback-classic"         % V.logback  % Test
