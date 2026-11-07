@@ -35,9 +35,11 @@ final case class Pipeline(
     redisUri: String
 ):
   def call(method: Method, path: String, body: Option[Json] = None): IO[(Status, Json)] =
-    val base = Request[IO](method, Uri.unsafeFromString(path)).putHeaders(Header.Raw(ci"X-Actor", "e2e"))
+    val base    = Request[IO](method, Uri.unsafeFromString(path)).putHeaders(Header.Raw(ci"X-Actor", "e2e"))
     val request =
-      body.fold(base)(json => base.withEntity(json.noSpaces).withContentType(`Content-Type`(MediaType.application.json)))
+      body.fold(base)(json =>
+        base.withEntity(json.noSpaces).withContentType(`Content-Type`(MediaType.application.json))
+      )
     admin.run(request).flatMap(r => r.as[String].map(t => (r.status, parse(t).getOrElse(Json.fromString(t)))))
 
   def snapshots: Resource[IO, SnapshotStore[IO]] =
@@ -60,19 +62,31 @@ object Pipeline:
   }(_.stop())
 
   private val redis = container {
-    val c = GenericContainer("redis:7.4-alpine", exposedPorts = Seq(6379), waitStrategy = Wait.forListeningPort())
+    val c =
+      GenericContainer("redis:7.4-alpine", exposedPorts = Seq(6379), waitStrategy = Wait.forListeningPort())
     c.start(); c
   }(_.stop())
 
   val resource: Resource[IO, Pipeline] =
     for
       (pg, kafkaContainer, redisContainer) <- (postgres, kafka, redis).parTupled
-      db = DbConfig(pg.host, pg.mappedPort(5432), pg.username, Secret(pg.password), pg.databaseName, poolSize = 6)
+      db = DbConfig(
+        pg.host,
+        pg.mappedPort(5432),
+        pg.username,
+        Secret(pg.password),
+        pg.databaseName,
+        poolSize = 6
+      )
       kafkaConfig = KafkaConfig(kafkaContainer.getBootstrapServers)
       redisUri    = s"redis://${redisContainer.host}:${redisContainer.mappedPort(6379)}"
       pool  <- AdminApp.database[IO](db)
       admin <- AdminApp.routes[IO](pool)
-      _     <- AdminApp.relay[IO](pool, kafkaConfig, RelayConfig(enabled = true, batchSize = 100, pollInterval = 1.second))
+      _     <- AdminApp.relay[IO](
+        pool,
+        kafkaConfig,
+        RelayConfig(enabled = true, batchSize = 100, pollInterval = 1.second)
+      )
       deliveryConfig = DeliveryConfig(
         host"127.0.0.1",
         port"0",

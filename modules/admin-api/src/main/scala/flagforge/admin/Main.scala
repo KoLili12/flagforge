@@ -55,9 +55,9 @@ object AdminApp:
   def server[F[_]: Async: Network: Console: LoggerFactory](config: AppConfig): Resource[F, Server] =
     val logger = LoggerFactory[F].getLogger
     for
-      pool   <- database[F](config.db)
-      app    <- routes[F](pool)
-      _ <-
+      pool <- database[F](config.db)
+      app  <- routes[F](pool)
+      _    <-
         if config.relay.enabled then relay[F](pool, config.kafka, config.relay)
         else Resource.eval(logger.warn("Outbox relay is disabled: changes will not reach the data plane"))
       server <- EmberServerBuilder

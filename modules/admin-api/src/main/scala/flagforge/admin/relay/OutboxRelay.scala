@@ -26,8 +26,8 @@ final case class RelayConfig(
   *   - Wakes up on `LISTEN outbox_inserted` (sub-second latency) and on a poll timer (safety net).
   *   - A transaction-scoped advisory lock makes sure only one relay publishes at a time, which preserves the
   *     commit order of events even with several admin-api instances running.
-  *   - Rows are marked as published only after Kafka acknowledged them, in the same transaction that locked them:
-  *     at-least-once delivery. Duplicates are harmless because consumers apply events by version.
+  *   - Rows are marked as published only after Kafka acknowledged them, in the same transaction that locked
+  *     them: at-least-once delivery. Duplicates are harmless because consumers apply events by version.
   */
 final class OutboxRelay[F[_]: Async: LoggerFactory](
     pool: Resource[F, Session[F]],
@@ -43,7 +43,7 @@ final class OutboxRelay[F[_]: Async: LoggerFactory](
     s.transaction.surround:
       s.unique(Sql.tryLock)(LockId).flatMap:
         case false => 0.pure[F]
-        case true =>
+        case true  =>
           s.execute(Sql.fetch)(config.batchSize).flatMap: rows =>
             if rows.isEmpty then 0.pure[F]
             else

@@ -13,8 +13,8 @@ final case class Ruleset(
   def withSegment(segment: Segment): Ruleset = copy(segments = segments.updated(segment.key, segment))
   def withoutFlag(key: FlagKey): Ruleset     = copy(flags = flags.removed(key))
 
-  /** Applies a change from the change feed. Returns `None` if the event is for another environment or is stale
-    * (an older version than the one already known), so redelivered and reordered events are harmless.
+  /** Applies a change from the change feed. Returns `None` if the event is for another environment or is
+    * stale (an older version than the one already known), so redelivered and reordered events are harmless.
     */
   def applyChange(event: ChangeEvent): Option[Ruleset] =
     if event.environmentKey != environment then None

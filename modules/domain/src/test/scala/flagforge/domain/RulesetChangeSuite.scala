@@ -12,7 +12,14 @@ class RulesetChangeSuite extends munit.FunSuite:
   private val config = FlagConfig(enabled = true, offVariation = off, fallthrough = Serve.Fixed(on))
 
   private def flag(version: Long) =
-    FeatureFlag(key, FlagKind.Boolean, List(Variation(on, Json.True), Variation(off, Json.False)), "s", version, config)
+    FeatureFlag(
+      key,
+      FlagKind.Boolean,
+      List(Variation(on, Json.True), Variation(off, Json.False)),
+      "s",
+      version,
+      config
+    )
 
   test("newer versions are applied, stale and duplicate ones are ignored"):
     val v2 = Ruleset(prod).applyChange(ChangeEvent.FlagUpdated(prod, flag(2))).get

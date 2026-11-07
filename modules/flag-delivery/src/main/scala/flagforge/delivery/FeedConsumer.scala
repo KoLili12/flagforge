@@ -11,8 +11,9 @@ import org.typelevel.log4cats.LoggerFactory
 
 /** Follows the change feed and folds it into [[DeliveryState]].
   *
-  * Starts right after the offset already in the state (restored from a snapshot, or reached before a restart);
-  * `ready` turns true once the consumer has caught up with the end of the topic as it was on startup.
+  * Starts right after the offset already in the state (restored from a snapshot, or reached before a
+  * restart); `ready` turns true once the consumer has caught up with the end of the topic as it was on
+  * startup.
   */
 final class FeedConsumer[F[_]: Async: LoggerFactory](
     kafka: KafkaConfig,
@@ -28,10 +29,12 @@ final class FeedConsumer[F[_]: Async: LoggerFactory](
         _       <- consumer.assign(NonEmptySet.one(tp))
         end     <- consumer.endOffsets(Set(tp)).map(_.getOrElse(tp, 0L))
         current <- state.get
-        start <-
+        start   <-
           if current.offset >= end then
             // The topic is behind our state: it was recreated. Our state describes a feed that no longer exists.
-            logger.warn(s"State offset ${current.offset} is ahead of the topic end $end, rebuilding from scratch") >>
+            logger.warn(
+              s"State offset ${current.offset} is ahead of the topic end $end, rebuilding from scratch"
+            ) >>
               state.set(DeliveryState.empty(current.maxRecent)).as(0L)
           else (current.offset + 1).pure[F]
         _ <- consumer.seek(tp, start)
@@ -46,7 +49,8 @@ final class FeedConsumer[F[_]: Async: LoggerFactory](
                     val record = committable.record
                     Option(record.value).toRight("tombstone").flatMap(ChangeFeed.decodeEvent) match
                       case Right(event) => (acc.applied(record.offset, event), errs)
-                      case Left(error)  => (acc.skipped(record.offset), s"offset ${record.offset}: $error" :: errs)
+                      case Left(error)  =>
+                        (acc.skipped(record.offset), s"offset ${record.offset}: $error" :: errs)
                 (next, (next.offset, errors.reverse))
               .flatMap: (offset, errors) =>
                 errors.traverse_(e => logger.warn(s"Skipped undecodable change event at $e")) >>

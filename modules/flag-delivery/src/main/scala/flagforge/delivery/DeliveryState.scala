@@ -33,7 +33,7 @@ final case class DeliveryState(
   /** Applies a consumed record. Stale or duplicate events advance the offset but change nothing. */
   def applied(recordOffset: Long, event: ChangeEvent): DeliveryState =
     ruleset(event.environmentKey).applyChange(event) match
-      case None => copy(offset = recordOffset)
+      case None          => copy(offset = recordOffset)
       case Some(updated) =>
         val appended = recent :+ Versioned(recordOffset, event)
         val trimmed  = appended.takeRight(maxRecent)
@@ -47,8 +47,9 @@ final case class DeliveryState(
   /** A record that could not be decoded: only moves the offset. */
   def skipped(recordOffset: Long): DeliveryState = copy(offset = recordOffset)
 
-  /** Changes of `env` after `lastSeen`, or `None` if they cannot be reconstructed and the client needs the full
-    * ruleset again (it is too far behind, or comes from a different feed, e.g. after the topic was recreated).
+  /** Changes of `env` after `lastSeen`, or `None` if they cannot be reconstructed and the client needs the
+    * full ruleset again (it is too far behind, or comes from a different feed, e.g. after the topic was
+    * recreated).
     */
   def changesSince(env: EnvironmentKey, lastSeen: Long): Option[Vector[Versioned]] =
     if lastSeen > offset || lastSeen + 1 < replayableFrom then None

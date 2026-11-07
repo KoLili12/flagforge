@@ -36,9 +36,9 @@ enum ConnectionState:
 
 /** Feature flag client.
   *
-  * Keeps the environment's ruleset in memory, updated in real time over Server-Sent Events, and evaluates flags
-  * locally: `get` never makes a network call and never fails. On disconnect it reconnects with exponential
-  * backoff and full jitter, sending `Last-Event-ID` to receive only the missed changes.
+  * Keeps the environment's ruleset in memory, updated in real time over Server-Sent Events, and evaluates
+  * flags locally: `get` never makes a network call and never fails. On disconnect it reconnects with
+  * exponential backoff and full jitter, sending `Last-Event-ID` to receive only the missed changes.
   */
 trait FlagforgeClient[F[_]]:
   def evaluate[A](flag: Flag[A], context: EvaluationContext): F[FlagResult[A]]
@@ -63,7 +63,10 @@ object FlagforgeClient:
       .build
       .flatMap(fromHttpClient(_, config))
 
-  def fromHttpClient[F[_]: Async: LoggerFactory](http: Client[F], config: SdkConfig): Resource[F, FlagforgeClient[F]] =
+  def fromHttpClient[F[_]: Async: LoggerFactory](
+      http: Client[F],
+      config: SdkConfig
+  ): Resource[F, FlagforgeClient[F]] =
     for
       rulesets    <- Resource.eval(SignallingRef.of[F, Option[Ruleset]](None))
       connState   <- Resource.eval(SignallingRef.of[F, ConnectionState](ConnectionState.Connecting))
@@ -79,12 +82,14 @@ object FlagforgeClient:
       def get[A](flag: Flag[A], context: EvaluationContext): F[A] = evaluate(flag, context).map(_.value)
 
       def watch[A](flag: Flag[A], context: EvaluationContext): Stream[F, A] =
-        rulesets.discrete.map(LocalEvaluation.evaluate(_, flag, context).value).changes(using Eq.fromUniversalEquals)
+        rulesets.discrete.map(LocalEvaluation.evaluate(_, flag, context).value).changes(using
+          Eq.fromUniversalEquals
+        )
 
       def awaitReady(timeout: FiniteDuration): F[Boolean] =
         rulesets.discrete.exists(_.isDefined).compile.lastOrError.timeoutTo(timeout, false.pure[F])
 
-      def ruleset: Signal[F, Option[Ruleset]]     = rulesets
+      def ruleset: Signal[F, Option[Ruleset]]    = rulesets
       def connection: Signal[F, ConnectionState] = connState
 
   private final class Streaming[F[_]: Async: LoggerFactory](
@@ -103,12 +108,11 @@ object FlagforgeClient:
 
     private object StreamEnded extends RuntimeException("stream closed by the server")
 
-    def run: F[Unit] =
-      (session ++ Stream.raiseError[F](StreamEnded))
-        .handleErrorWith(e => Stream.exec(backoff(e)))
-        .repeat
-        .compile
-        .drain
+    def run: F[Unit] = (session ++ Stream.raiseError[F](StreamEnded))
+      .handleErrorWith(e => Stream.exec(backoff(e)))
+      .repeat
+      .compile
+      .drain
 
     private def session: Stream[F, Unit] =
       Stream.eval(lastEventId.get).flatMap: lastId =>
@@ -128,21 +132,24 @@ object FlagforgeClient:
     private def handle(event: ServerSentEvent): F[Unit] =
       val applied = event.eventType match
         case Some("put")   => parse[Ruleset](event)(rs => rulesets.set(Some(rs)))
-        case Some("patch") => parse[ChangeEvent](event)(c => rulesets.update(_.map(rs => rs.applyChange(c).getOrElse(rs))))
-        case _             => ().pure[F] // heartbeat
+        case Some("patch") =>
+          parse[ChangeEvent](event)(c => rulesets.update(_.map(rs => rs.applyChange(c).getOrElse(rs))))
+        case _ => ().pure[F] // heartbeat
       applied >> failures.set(0)
 
     private def parse[A: Decoder](event: ServerSentEvent)(apply: A => F[Unit]): F[Unit] =
       decode[A](event.data.getOrElse("")) match
         case Right(a) => apply(a) >> event.id.traverse_(id => lastEventId.set(Some(id)))
-        case Left(e)  => logger.warn(s"Ignoring malformed '${event.eventType.mkString}' event: ${e.getMessage}")
+        case Left(e)  =>
+          logger.warn(s"Ignoring malformed '${event.eventType.mkString}' event: ${e.getMessage}")
 
     /** Exponential backoff with full jitter: random delay in [min, min * 2^failures], capped. */
     private def backoff(error: Throwable): F[Unit] =
       for
         attempt <- failures.getAndUpdate(_ + 1)
         ceiling = (config.minBackoff * math.pow(2, attempt.min(20).toDouble).toLong).min(config.maxBackoff)
-        jitter <- random.betweenLong(config.minBackoff.toMillis, ceiling.toMillis.max(config.minBackoff.toMillis + 1))
+        jitter <-
+          random.betweenLong(config.minBackoff.toMillis, ceiling.toMillis.max(config.minBackoff.toMillis + 1))
         delay = jitter.millis
         _ <- connection.set(ConnectionState.Disconnected(error.getMessage, delay))
         _ <- logger.info(s"Flag stream disconnected (${error.getMessage}), reconnecting in $delay")

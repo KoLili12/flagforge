@@ -19,14 +19,15 @@ class PipelineSuite extends CatsEffectSuite:
 
   override val munitIOTimeout: Duration = 3.minutes
 
-  private val pipeline = ResourceSuiteLocalFixture("pipeline", Pipeline.resource)
+  private val pipeline       = ResourceSuiteLocalFixture("pipeline", Pipeline.resource)
   override def munitFixtures = List(pipeline)
 
   private val NewCheckout = Flag.bool("new-checkout", default = false)
 
   private def setUp(p: Pipeline, env: String): IO[Unit] =
     for
-      (envStatus, _)  <- p.call(Method.POST, "/api/v1/environments", Some(json"""{"key": $env, "name": $env}"""))
+      (envStatus, _) <-
+        p.call(Method.POST, "/api/v1/environments", Some(json"""{"key": $env, "name": $env}"""))
       (flagStatus, _) <- p.call(
         Method.POST,
         "/api/v1/flags",
@@ -37,14 +38,21 @@ class PipelineSuite extends CatsEffectSuite:
       )
     yield
       assertEquals(envStatus, Status.Created)
-      assert(flagStatus == Status.Created || flagStatus == Status.Conflict, flagStatus) // flag is shared by tests
+      assert(
+        flagStatus == Status.Created || flagStatus == Status.Conflict,
+        flagStatus
+      ) // flag is shared by tests
 
   private def toggle(p: Pipeline, env: String, enabled: Boolean): IO[Unit] =
-    p.call(Method.POST, s"/api/v1/environments/$env/flags/new-checkout/toggle", Some(json"""{"enabled": $enabled}"""))
+    p.call(
+      Method.POST,
+      s"/api/v1/environments/$env/flags/new-checkout/toggle",
+      Some(json"""{"enabled": $enabled}""")
+    )
       .map((status, body) => assertEquals(status, Status.Ok, body))
 
   test("a kill switch flipped in the admin API reaches a connected SDK in real time"):
-    val p = pipeline()
+    val p    = pipeline()
     val user = EvaluationContext("user-1")
     setUp(p, "e2e-live") >>
       FlagforgeClient
@@ -67,8 +75,9 @@ class PipelineSuite extends CatsEffectSuite:
             assertEquals(off, false)
 
   test("every outbox row is eventually published"):
-    val p = pipeline()
-    val unpublished = p.adminDb.use(_.unique(sql"SELECT count(*) FROM outbox WHERE published_at IS NULL".query(int8)))
+    val p           = pipeline()
+    val unpublished =
+      p.adminDb.use(_.unique(sql"SELECT count(*) FROM outbox WHERE published_at IS NULL".query(int8)))
     Stream
       .repeatEval(unpublished)
       .metered(200.millis)
@@ -92,7 +101,7 @@ class PipelineSuite extends CatsEffectSuite:
       for
         _        <- setUp(p, "e2e-warm")
         snapshot <- snapshotWithFlag
-        _ <- DeliveryApp
+        _        <- DeliveryApp
           .resource[IO](p.deliveryConfig, snapshots)
           .use: second =>
             for
@@ -101,7 +110,10 @@ class PipelineSuite extends CatsEffectSuite:
               current  <- second.state.get
             yield
               assert(restored.offset >= snapshot.offset, s"${restored.offset} < ${snapshot.offset}")
-              assert(restored.ruleset(env).flags.nonEmpty, "the flag must come from the snapshot, not from Kafka")
+              assert(
+                restored.ruleset(env).flags.nonEmpty,
+                "the flag must come from the snapshot, not from Kafka"
+              )
               assert(ready)
               assertEquals(current.ruleset(env).flags.keySet, restored.ruleset(env).flags.keySet)
       yield ()

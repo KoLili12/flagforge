@@ -20,10 +20,10 @@ final case class KafkaConfig(
 
 /** The change feed: a single-partition, log-compacted topic of [[ChangeEvent]]s.
   *
-  *   - One partition gives a total order of all changes, so a record offset is a global, monotonic version that
-  *     every delivery instance agrees on. It is used as the SSE event id.
-  *   - Compaction by [[ChangeEvent.compactionKey]] keeps only the latest state of every flag and segment, so a
-  *     consumer can rebuild the whole state by reading the topic from the beginning.
+  *   - One partition gives a total order of all changes, so a record offset is a global, monotonic version
+  *     that every delivery instance agrees on. It is used as the SSE event id.
+  *   - Compaction by [[ChangeEvent.compactionKey]] keeps only the latest state of every flag and segment, so
+  *     a consumer can rebuild the whole state by reading the topic from the beginning.
   */
 object ChangeFeed:
 

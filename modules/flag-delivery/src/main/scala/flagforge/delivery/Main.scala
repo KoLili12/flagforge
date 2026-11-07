@@ -26,10 +26,9 @@ object DeliveryApp:
     val logger = LoggerFactory[F].getLogger
 
     /** Restarts `fa` after failures, e.g. while Kafka is unavailable. */
-    def supervised(name: String)(fa: F[Unit]): F[Unit] =
-      (fa >> logger.warn(s"$name stopped, restarting"))
-        .handleErrorWith(e => logger.error(e)(s"$name failed, restarting in 5s") >> Async[F].sleep(5.seconds))
-        .foreverM
+    def supervised(name: String)(fa: F[Unit]): F[Unit] = (fa >> logger.warn(s"$name stopped, restarting"))
+      .handleErrorWith(e => logger.error(e)(s"$name failed, restarting in 5s") >> Async[F].sleep(5.seconds))
+      .foreverM
 
     val initialState: F[DeliveryState] =
       snapshots.load.attempt.flatMap:
@@ -37,15 +36,19 @@ object DeliveryApp:
           logger.info(s"Warm start from snapshot at offset ${snapshot.offset}")
             .as(DeliveryState.fromSnapshot(snapshot, config.maxRecentEvents))
         case Right(None) => DeliveryState.empty(config.maxRecentEvents).pure[F]
-        case Left(e) =>
-          logger.warn(e)("Could not load snapshot, cold start").as(DeliveryState.empty(config.maxRecentEvents))
+        case Left(e)     =>
+          logger.warn(e)(
+            "Could not load snapshot, cold start"
+          ).as(DeliveryState.empty(config.maxRecentEvents))
 
     def snapshotter(state: Signal[F, DeliveryState]): F[Unit] =
       state.discrete
         .debounce(config.snapshotDebounce)
         .filter(_.offset >= 0)
         .changesBy(_.offset)
-        .evalMap(s => snapshots.save(s.snapshot).handleErrorWith(e => logger.warn(e)("Could not save snapshot")))
+        .evalMap(s =>
+          snapshots.save(s.snapshot).handleErrorWith(e => logger.warn(e)("Could not save snapshot"))
+        )
         .compile
         .drain
 
@@ -54,8 +57,8 @@ object DeliveryApp:
       state       <- Resource.eval(initialState.flatMap(SignallingRef.of[F, DeliveryState]))
       ready       <- Resource.eval(SignallingRef.of[F, Boolean](false))
       connections <- Resource.eval(Ref.of[F, Int](0))
-      _           <- supervised("Change feed consumer")(FeedConsumer(config.kafka, state, ready).run).background
-      _           <- supervised("Snapshotter")(snapshotter(state)).background
+      _ <- supervised("Change feed consumer")(FeedConsumer(config.kafka, state, ready).run).background
+      _ <- supervised("Snapshotter")(snapshotter(state)).background
     yield Running(SdkRoutes(state, ready, connections, config.heartbeat).routes.orNotFound, state, ready)
 
   def server[F[_]: Async: Network: LoggerFactory](
@@ -64,7 +67,7 @@ object DeliveryApp:
   ): Resource[F, Server] =
     for
       running <- resource[F](config, snapshots)
-      server <- EmberServerBuilder
+      server  <- EmberServerBuilder
         .default[F]
         .withHost(config.host)
         .withPort(config.port)
@@ -83,7 +86,7 @@ object Main extends IOApp.Simple:
   def run: IO[Unit] =
     val app =
       for
-        config <- DeliveryConfig.load[IO].toResource
+        config    <- DeliveryConfig.load[IO].toResource
         snapshots <- config.redisUri.fold(
           Resource.pure[IO, SnapshotStore[IO]](SnapshotStore.noop[IO])
         )(RedisSnapshotStore.resource[IO])

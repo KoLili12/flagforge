@@ -10,5 +10,5 @@ trait SnapshotStore[F[_]]:
 
 object SnapshotStore:
   def noop[F[_]: Applicative]: SnapshotStore[F] = new:
-    def load: F[Option[Snapshot]]          = none[Snapshot].pure[F]
+    def load: F[Option[Snapshot]]         = none[Snapshot].pure[F]
     def save(snapshot: Snapshot): F[Unit] = ().pure[F]

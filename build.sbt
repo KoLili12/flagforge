@@ -28,7 +28,17 @@ lazy val serviceSettings = Seq(
 
 lazy val root = project
   .in(file("."))
-  .aggregate(domain.jvm, domain.js, evalCore.jvm, evalCore.js, messaging, adminApi, flagDelivery, sdk, itTests)
+  .aggregate(
+    domain.jvm,
+    domain.js,
+    evalCore.jvm,
+    evalCore.js,
+    messaging,
+    adminApi,
+    flagDelivery,
+    sdk,
+    itTests
+  )
   .settings(
     name           := "flagforge",
     publish / skip := true
@@ -69,7 +79,8 @@ lazy val messaging = project
     )
   )
 
-/** Control plane: CRUD for environments, flags and segments, backed by Postgres; relays the outbox to Kafka. */
+/** Control plane: CRUD for environments, flags and segments, backed by Postgres; relays the outbox to Kafka.
+  */
 lazy val adminApi = project
   .in(file("modules/admin-api"))
   .dependsOn(evalCore.jvm, messaging)
@@ -136,9 +147,9 @@ lazy val itTests = project
     name           := "flagforge-it-tests",
     publish / skip := true,
     libraryDependencies ++= Seq(
-      "org.http4s"         %% "http4s-ember-client"             % V.http4s,
-      "org.testcontainers"  % "testcontainers-kafka"            % V.testcontainersJava % Test,
-      "com.dimafeng"       %% "testcontainers-scala-postgresql" % V.testcontainers     % Test,
-      "io.circe"           %% "circe-literal"                   % V.circe              % Test
+      "org.http4s"        %% "http4s-ember-client"             % V.http4s,
+      "org.testcontainers" % "testcontainers-kafka"            % V.testcontainersJava % Test,
+      "com.dimafeng"      %% "testcontainers-scala-postgresql" % V.testcontainers     % Test,
+      "io.circe"          %% "circe-literal"                   % V.circe              % Test
     )
   )

@@ -6,7 +6,8 @@ import flagforge.domain.*
 class DeliveryStateSuite extends munit.FunSuite:
 
   test("events build per-environment rulesets"):
-    val state = feed(DeliveryState.empty(), 0, updated(prod, "a", 1), updated(dev, "a", 1), updated(prod, "b", 1))
+    val state =
+      feed(DeliveryState.empty(), 0, updated(prod, "a", 1), updated(dev, "a", 1), updated(prod, "b", 1))
     assertEquals(state.offset, 2L)
     assertEquals(state.ruleset(prod).flags.keySet.map(k => k.value: String), Set("a", "b"))
     assertEquals(state.ruleset(dev).flags.keySet.map(k => k.value: String), Set("a"))
@@ -19,7 +20,8 @@ class DeliveryStateSuite extends munit.FunSuite:
     assertEquals(state.recent.map(_.offset), Vector(0L))
 
   test("changesSince returns only the missed changes of one environment"):
-    val state = feed(DeliveryState.empty(), 0, updated(prod, "a", 1), updated(dev, "a", 1), updated(prod, "a", 2))
+    val state =
+      feed(DeliveryState.empty(), 0, updated(prod, "a", 1), updated(dev, "a", 1), updated(prod, "a", 2))
     assertEquals(state.changesSince(prod, 0).map(_.map(_.offset)), Some(Vector(2L)))
     assertEquals(state.changesSince(prod, 2), Some(Vector.empty))
 

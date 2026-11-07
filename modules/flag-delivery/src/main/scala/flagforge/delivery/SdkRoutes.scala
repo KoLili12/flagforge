@@ -60,14 +60,16 @@ final class SdkRoutes[F[_]: Temporal](
     case req @ GET -> `sdk` / Env(env) / "ruleset" =>
       whenReady:
         state.get.flatMap: s =>
-          val tag = EntityTag(s.offset.toString)
+          val tag   = EntityTag(s.offset.toString)
           val fresh = req.headers.get[`If-None-Match`].flatMap(_.tags).exists(_.exists(_.tag == tag.tag))
           if fresh then NotModified() else Ok(s.ruleset(env), ETag(tag))
 
     case req @ POST -> `sdk` / Env(env) / "evaluate" =>
       whenReady:
         req.as[EvaluationContext].flatMap: context =>
-          state.get.flatMap(s => Ok(Evaluator.evaluateAll(s.ruleset(env), context).values.toList.sortBy(_.flag)))
+          state.get.flatMap(s =>
+            Ok(Evaluator.evaluateAll(s.ruleset(env), context).values.toList.sortBy(_.flag))
+          )
 
   private def whenReady(response: => F[Response[F]]): F[Response[F]] =
     ready.get.ifM(response, ServiceUnavailable("change feed is still loading"))

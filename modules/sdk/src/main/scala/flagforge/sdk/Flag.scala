@@ -46,11 +46,11 @@ object LocalEvaluation:
       FlagResult(flag.default, None, Reason.Error(kind, message))
 
     ruleset match
-      case None => fallback(ErrorKind.ClientNotReady, "no ruleset received yet")
+      case None     => fallback(ErrorKind.ClientNotReady, "no ruleset received yet")
       case Some(rs) =>
         val evaluation = flagforge.eval.Evaluator.evaluate(rs, flag.key, context)
         evaluation.value match
-          case None => FlagResult(flag.default, None, evaluation.reason)
+          case None       => FlagResult(flag.default, None, evaluation.reason)
           case Some(json) =>
             flag.read(json) match
               case Some(value) => FlagResult(value, evaluation.variation, evaluation.reason)

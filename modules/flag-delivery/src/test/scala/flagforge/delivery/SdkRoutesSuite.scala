@@ -36,14 +36,18 @@ class SdkRoutesSuite extends CatsEffectSuite:
   private def events(app: HttpApp[IO], request: Request[IO], n: Int): IO[List[ServerSentEvent]] =
     app
       .run(request)
-      .flatMap(_.body.through(ServerSentEvent.decoder).filter(_.eventType.isDefined).take(n.toLong).compile.toList)
+      .flatMap(
+        _.body.through(ServerSentEvent.decoder).filter(_.eventType.isDefined).take(n.toLong).compile.toList
+      )
       .timeout(5.seconds)
 
   private val twoFlags = feed(DeliveryState.empty(), 0, updated(prod, "a", 1), updated(prod, "b", 1))
 
   test("stream is unavailable until the feed is loaded"):
     fixture(DeliveryState.empty(), isReady = false).flatMap: f =>
-      f.routes.run(Request[IO](Method.GET, streamUri)).map(r => assertEquals(r.status, Status.ServiceUnavailable))
+      f.routes.run(Request[IO](Method.GET, streamUri)).map(r =>
+        assertEquals(r.status, Status.ServiceUnavailable)
+      )
 
   test("a new client gets a put with the full ruleset, then patches"):
     fixture(twoFlags).flatMap: f =>
@@ -77,9 +81,12 @@ class SdkRoutesSuite extends CatsEffectSuite:
     fixture(twoFlags).flatMap: f =>
       val uri = uri"/sdk/v1/environments/prod/ruleset"
       for
-        first  <- f.routes.run(Request[IO](Method.GET, uri))
-        etag    = first.headers.get[ETag].map(_.tag).get
-        second <- f.routes.run(Request[IO](Method.GET, uri).putHeaders(`If-None-Match`(Some(cats.data.NonEmptyList.one(etag)))))
+        first <- f.routes.run(Request[IO](Method.GET, uri))
+        etag = first.headers.get[ETag].map(_.tag).get
+        second <- f.routes.run(Request[IO](
+          Method.GET,
+          uri
+        ).putHeaders(`If-None-Match`(Some(cats.data.NonEmptyList.one(etag)))))
       yield
         assertEquals(first.status, Status.Ok)
         assertEquals(second.status, Status.NotModified)

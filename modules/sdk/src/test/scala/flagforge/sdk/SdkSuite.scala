@@ -53,12 +53,17 @@ class FlagSuite extends munit.FunSuite:
 
   test("a value of the wrong type falls back to the default"):
     val asString = Flag.string("new-checkout", default = "fallback")
-    val result   = LocalEvaluation.evaluate(Some(ruleset(checkout(1, enabled = true))), asString, EvaluationContext("u"))
+    val result   =
+      LocalEvaluation.evaluate(Some(ruleset(checkout(1, enabled = true))), asString, EvaluationContext("u"))
     assertEquals(result.value, "fallback")
     assertEquals(result.reason.asInstanceOf[Reason.Error].kind, ErrorKind.WrongType)
 
   test("served values are decoded"):
-    val result = LocalEvaluation.evaluate(Some(ruleset(checkout(1, enabled = true))), NewCheckout, EvaluationContext("u"))
+    val result = LocalEvaluation.evaluate(
+      Some(ruleset(checkout(1, enabled = true))),
+      NewCheckout,
+      EvaluationContext("u")
+    )
     assertEquals((result.value, result.variation), (true, Some(on)))
 
 class ClientSuite extends CatsEffectSuite:
@@ -80,27 +85,43 @@ class ClientSuite extends CatsEffectSuite:
               Ok(
                 Stream(
                   sse("put", 5, ruleset(checkout(1, enabled = true)).asJson),
-                  sse("patch", 6, (ChangeEvent.FlagUpdated(prod, checkout(2, enabled = false)): ChangeEvent).asJson)
+                  sse(
+                    "patch",
+                    6,
+                    (ChangeEvent.FlagUpdated(prod, checkout(2, enabled = false)): ChangeEvent).asJson
+                  )
                 ).covary[IO]
               )
             // Reconnection: a newer change, then the stream stays open.
             case _ =>
               Ok(
-                Stream.emit(sse("patch", 7, (ChangeEvent.FlagUpdated(prod, checkout(3, enabled = true)): ChangeEvent).asJson))
+                Stream.emit(sse(
+                  "patch",
+                  7,
+                  (ChangeEvent.FlagUpdated(prod, checkout(3, enabled = true)): ChangeEvent).asJson
+                ))
                   .covary[IO] ++ Stream.never[IO]
               )
           }
         }
         .orNotFound
-      server = EmberServerBuilder.default[IO].withHost(host"127.0.0.1").withPort(port"0").withHttpApp(app).withShutdownTimeout(1.second).build
+      server = EmberServerBuilder.default[IO].withHost(
+        host"127.0.0.1"
+      ).withPort(port"0").withHttpApp(app).withShutdownTimeout(1.second).build
       values <- server
         .flatMap: srv =>
           val config = SdkConfig(srv.baseUri, prod, minBackoff = 10.millis, maxBackoff = 50.millis)
           FlagforgeClient.resource[IO](config)
         .use: client =>
-          client.awaitReady(5.seconds).assert >>
-            client.watch(NewCheckout, EvaluationContext("u")).dropWhile(_ == false).take(1).compile.toList.timeout(5.seconds)
+          // Version 3 only exists on the second connection, so seeing it proves the reconnect happened.
+          val reconnected = client.ruleset.discrete
+            .find(_.exists(_.flags.get(NewCheckout.key).exists(_.version == 3)))
+            .compile
+            .drain
+            .timeout(5.seconds)
+          client.awaitReady(5.seconds).assert >> reconnected >>
+            client.get(NewCheckout, EvaluationContext("u"))
       seen <- requests.get
     yield
-      assertEquals(values, List(true))
+      assertEquals(values, true)
       assertEquals(seen.take(2), List(None, Some("6")))
