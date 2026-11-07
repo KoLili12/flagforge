@@ -2,8 +2,8 @@
 
 Feature flags & A/B testing platform written in Scala 3 on the Typelevel stack.
 
-> Pet project, work in progress. Stages 1–3 (control plane, evaluation engine, real-time delivery, SDK,
-> experiment analytics) are done; see the roadmap.
+> Pet project, work in progress. Stages 1–4 (control plane, evaluation engine, real-time delivery, SDK,
+> experiment analytics, containers, observability, load tests) are done; see the roadmap.
 
 ## Architecture
 
@@ -42,6 +42,9 @@ idempotent producer → compacted Kafka topic → every `flag-delivery` instance
 | `event-ingest` | JVM | Receives SDK analytics: Redis rate limiting and dedup (Lua), publishes to Kafka |
 | `stats-engine` | JVM | Consumes analytics into Postgres, serves experiment reports |
 | `sdk` | JVM | Client library: live ruleset over SSE, typed flags, local evaluation, exposure/metric tracking |
+| `telemetry` | JVM | OpenTelemetry wiring (otel4s): SDK from `OTEL_*` env vars, HTTP tracing and metrics |
+| `simulator` | JVM | Demo traffic: sets up an experiment and simulates users through the real SDK |
+| `load-test` | JVM | SSE fan-out latency and ingest throughput against a running system |
 | `it-tests` | JVM | End-to-end tests of the whole pipeline on real Postgres, Kafka and Redis (testcontainers) |
 
 ### Highlights
@@ -82,6 +85,13 @@ idempotent producer → compacted Kafka topic → every `flag-delivery` instance
 - **End-to-end proof.** A test runs a real A/B experiment through every service: 2000 simulated users, a true
   20% → 30% conversion effect, and asserts the report finds it without an SRM.
 
+**Operations**
+- **One command:** `docker compose --profile apps up` runs every service, Kafka, Redis, Postgres, Prometheus, Tempo
+  and Grafana with a provisioned dashboard. Images are built by sbt-native-packager (JRE 21, non-root).
+- **One trace per flag change:** the request's W3C trace context is stored with the outbox row, travels in Kafka
+  headers and is continued by flag-delivery, whose span starts at the commit: admin API → SQL → Kafka → applied.
+- **Load-tested** with a purpose-built tool; the numbers are below.
+
 **SDK**
 - `get` never touches the network and never throws: defaults plus a `Reason` on any problem.
 - Flag keys are checked **at compile time**: `Flag.bool("Bad Key", false)` does not compile.
@@ -91,7 +101,7 @@ idempotent producer → compacted Kafka topic → every `flag-delivery` instance
 
 ## Stack
 
-Scala 3 · cats-effect 3 · fs2 · fs2-kafka · redis4cats (Lua scripting) · http4s (Ember) · tapir (OpenAPI/Swagger) · skunk ·
+Scala 3 · cats-effect 3 · fs2 · fs2-kafka · redis4cats (Lua scripting) · otel4s / OpenTelemetry · http4s (Ember) · tapir (OpenAPI/Swagger) · skunk ·
 Flyway · circe · Iron · ciris · log4cats · munit + ScalaCheck · testcontainers · Scala.js
 
 ## Requirements
@@ -119,7 +129,15 @@ docker compose --profile apps up -d --wait # infrastructure + all services
                                            # POSTGRES_PORT=55432 if 5432 is taken
 ```
 
-Admin API + Swagger UI on :8080, flag delivery :8081, stats :8082, ingest :8083, Kafka UI :8090.
+Admin API + Swagger UI on :8080, flag delivery :8081, stats :8082, ingest :8083, Kafka UI :8090,
+**Grafana :3000** (dashboard "flagforge", no login), Prometheus :9090.
+
+Add simulated users running an A/B test, so the dashboard has something to show:
+
+```bash
+docker compose --profile apps --profile demo up -d   # USERS_PER_SECOND=25 by default
+docker compose logs -f simulator                     # experiment report every 30 s
+```
 
 ### Services from sbt (for development)
 
@@ -137,7 +155,8 @@ sbt statsEngine/run
 | Service | Env vars |
 |---|---|
 | admin-api | `HTTP_HOST`, `HTTP_PORT`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_POOL_SIZE`, `KAFKA_BOOTSTRAP_SERVERS`, `OUTBOX_RELAY_ENABLED`, `OUTBOX_BATCH_SIZE`, `OUTBOX_POLL_INTERVAL` |
-| flag-delivery | `HTTP_HOST`, `HTTP_PORT`, `KAFKA_BOOTSTRAP_SERVERS`, `REDIS_URI` (optional), `SSE_HEARTBEAT`, `SNAPSHOT_DEBOUNCE`, `MAX_RECENT_EVENTS` |
+| flag-delivery | `HTTP_HOST`, `HTTP_PORT`, `KAFKA_BOOTSTRAP_SERVERS`, `REDIS_URI` (optional), `SSE_HEARTBEAT`, `SNAPSHOT_DEBOUNCE`, `MAX_RECENT_EVENTS`, `MAX_CONNECTIONS` |
+| all services | standard `OTEL_*` variables, e.g. `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` (telemetry is off without it) |
 | event-ingest | `HTTP_HOST`, `HTTP_PORT`, `KAFKA_BOOTSTRAP_SERVERS`, `REDIS_URI`, `RATE_LIMIT_CAPACITY`, `RATE_LIMIT_REFILL_PER_SECOND`, `DEDUP_TTL`, `MAX_BATCH` |
 | stats-engine | `HTTP_HOST`, `HTTP_PORT`, `DB_*` (as admin-api), `KAFKA_BOOTSTRAP_SERVERS` |
 
@@ -223,6 +242,48 @@ curl 'localhost:8082/stats/v1/environments/production/flags/new-checkout/metrics
 Ingest API used by the SDK: `POST localhost:8083/events/v1/environments/{env}/batch` with
 `{"exposures": [...], "metrics": [...]}` → `202 {"accepted": n, "duplicates": m}`, `400`, `429` + `Retry-After`, `503`.
 
+## Observability
+
+Every service exports traces and metrics over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (compose does it);
+otherwise telemetry is a no-op. The collector forwards metrics to Prometheus and traces to Tempo.
+
+The **flagforge** Grafana dashboard (regenerate with `python3 deploy/observability/tools/dashboard.py`):
+
+| Panel | Metric |
+|---|---|
+| Propagation latency p50/p95/p99 | `flagforge_delivery_propagation_seconds` — outbox row written → change applied in flag-delivery |
+| SSE connections, feed offset | `flagforge_delivery_sse_connections`, `flagforge_delivery_offset` |
+| Change events by outcome | `flagforge_delivery_events_total{outcome=applied\|stale\|invalid}` |
+| Outbox throughput and lag | `flagforge_outbox_published_total`, `flagforge_outbox_lag_seconds` (commit → Kafka ack) |
+| Ingested events, rejections | `flagforge_ingest_events_total{outcome}`, `flagforge_ingest_rejected_total{reason}` |
+| Stored analytics | `flagforge_stats_stored_total{kind}` |
+| HTTP rate and p95 per service | `http_server_request_duration_seconds` |
+| Recent flag changes | Tempo, TraceQL `{ name = "change-feed apply" }` |
+
+## Load tests
+
+`load-test` runs against a live system (e.g. the Docker setup):
+
+```bash
+sbt "loadTest/run sse connections=5000 rounds=10"         # SSE fan-out
+sbt "loadTest/run ingest clients=50 batch=100 seconds=30" # analytics ingest
+```
+
+Results on a laptop (Apple Silicon, 8 GB for Docker Desktop, everything in containers, one instance per service,
+load generator on the host — so Docker Desktop's port forwarding is part of every measurement):
+
+| Scenario | Result |
+|---|---|
+| SSE fan-out, 1000 clients × 10 flag changes | 10 000/10 000 delivered; admin API call → patch at *every* client: p50 36 ms, p99 88 ms |
+| SSE fan-out, 5000 clients × 10 flag changes | 100% delivered; after JIT warm-up p50 70–125 ms, p99 150–220 ms; rare single-client outliers of several seconds |
+| Ingest, 50 clients × batches of 100 | **~77 000 events/s** on one instance (Redis dedup + Kafka acks), all `202`, p50 41 ms, p99 443 ms |
+| stats-engine consumption | ~13 000 events/s per instance — the bottleneck; scales out to 6 instances (partitions) |
+| Propagation inside the system (Grafana) | commit → applied in flag-delivery: p50 ≈ 5 ms, p99 ≈ 21 ms |
+
+What the load tests found and fixed: ember's default limit of 1024 connections silently capped flag-delivery at
+~1000 SDKs (now `MAX_CONNECTIONS`, default 20 000), and every patch was JSON-encoded once per client (now once
+per change).
+
 ## Roadmap
 
 | Stage | Scope | Status |
@@ -230,5 +291,5 @@ Ingest API used by the SDK: `POST localhost:8083/events/v1/environments/{env}/ba
 | 1 | Domain, evaluation engine, admin API over Postgres | ✅ |
 | 2 | Outbox relay → Kafka, `flag-delivery` with SSE + Redis warm starts, Scala SDK, end-to-end tests | ✅ |
 | 3 | Exposure tracking in the SDK, `event-ingest` (Redis dedup / rate limiting), `stats-engine` (z/t-tests, SRM) | ✅ |
-| 4 | Traffic simulator, otel4s tracing, Grafana dashboards, Gatling load tests, Docker images | ⏳ |
-| 5 | Sequential testing (mSPRT), CUPED, Laminar UI, Kubernetes | |
+| 4 | Docker images, otel4s tracing and metrics, Grafana dashboards, traffic simulator, load tests | ✅ |
+| 5 | Sequential testing (mSPRT), CUPED, Laminar UI, Kubernetes | ⏳ |
