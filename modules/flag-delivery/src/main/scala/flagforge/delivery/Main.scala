@@ -78,8 +78,12 @@ object Main extends IOApp.Simple:
   given LoggerFactory[IO] = Slf4jFactory.create[IO]
 
   def run: IO[Unit] =
-    DeliveryConfig
-      .load[IO]
-      .toResource
-      .flatMap(config => DeliveryApp.server[IO](config, SnapshotStore.noop[IO]))
-      .useForever
+    val app =
+      for
+        config <- DeliveryConfig.load[IO].toResource
+        snapshots <- config.redisUri.fold(
+          Resource.pure[IO, SnapshotStore[IO]](SnapshotStore.noop[IO])
+        )(RedisSnapshotStore.resource[IO])
+        server <- DeliveryApp.server[IO](config, snapshots)
+      yield server
+    app.useForever
