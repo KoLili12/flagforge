@@ -70,6 +70,9 @@ object DeliveryApp:
         .withPort(config.port)
         .withHttpApp(running.app)
         .withIdleTimeout(Duration.Inf) // SSE connections are long-lived; heartbeats keep proxies happy
+        // Streams never complete on their own, so a graceful shutdown would always wait for the full timeout.
+        // Clients reconnect (to another instance) with Last-Event-ID anyway.
+        .withShutdownTimeout(2.seconds)
         .build
       _ <- Resource.eval(LoggerFactory[F].getLogger.info(s"Flag delivery on ${server.baseUri}"))
     yield server

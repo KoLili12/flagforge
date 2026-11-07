@@ -120,7 +120,10 @@ lazy val sdk = project
       "org.typelevel" %% "cats-effect"         % V.catsEffect,
       "org.http4s"    %% "http4s-ember-client" % V.http4s,
       "org.typelevel" %% "log4cats-core"       % V.log4cats,
-      "org.typelevel" %% "munit-cats-effect"   % V.munitCatsEffect % Test
+      "org.typelevel" %% "munit-cats-effect"   % V.munitCatsEffect % Test,
+      "org.http4s"    %% "http4s-dsl"          % V.http4s          % Test,
+      "org.http4s"    %% "http4s-ember-server" % V.http4s          % Test,
+      "ch.qos.logback" % "logback-classic"     % V.logback         % Test
     )
   )
 
