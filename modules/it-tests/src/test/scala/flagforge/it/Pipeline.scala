@@ -8,6 +8,8 @@ import com.dimafeng.testcontainers.{GenericContainer, PostgreSQLContainer}
 import flagforge.admin.relay.RelayConfig
 import flagforge.admin.{AdminApp, DbConfig}
 import flagforge.delivery.{DeliveryApp, DeliveryConfig, RedisSnapshotStore, SnapshotStore}
+import flagforge.ingest.{IngestApp, IngestConfig, IngestLimits, RateLimit}
+import flagforge.statsengine.{StatsApp, StatsConfig}
 import flagforge.messaging.KafkaConfig
 import io.circe.Json
 import io.circe.parser.parse
@@ -25,13 +27,16 @@ import scala.concurrent.duration.*
 
 /** The whole system wired together against real infrastructure:
   *
-  * admin API (in-process) → Postgres outbox → relay → Kafka → flag-delivery (real HTTP port) → SSE → SDK
+  *   - flags: admin API (in-process) → Postgres outbox → relay → Kafka → flag-delivery (HTTP) → SSE → SDK
+  *   - analytics: SDK → event-ingest (HTTP) → Redis dedup/limits → Kafka → stats-engine (in-process) → Postgres
   */
 final case class Pipeline(
     admin: HttpApp[IO],
     adminDb: Resource[IO, Session[IO]],
     deliveryUri: Uri,
     deliveryConfig: DeliveryConfig,
+    ingestUri: Uri,
+    stats: HttpApp[IO],
     redisUri: String
 ):
   def call(method: Method, path: String, body: Option[Json] = None): IO[(Status, Json)] =
@@ -97,4 +102,23 @@ object Pipeline:
       )
       snapshots <- RedisSnapshotStore.resource[IO](redisUri)
       delivery  <- DeliveryApp.server[IO](deliveryConfig, snapshots)
-    yield Pipeline(admin, pool, delivery.baseUri, deliveryConfig, redisUri)
+      ingest <- IngestApp.server[IO](
+        IngestConfig(
+          host"127.0.0.1",
+          port"0",
+          kafkaConfig,
+          redisUri,
+          RateLimit(capacity = 100_000, refillPerSecond = 50_000),
+          dedupTtl = 1.hour,
+          IngestLimits()
+        )
+      )
+      stats <- StatsApp.resource[IO](
+        StatsConfig(
+          host"127.0.0.1",
+          port"0",
+          flagforge.statsengine.DbConfig(db.host, db.port, db.user, db.password, db.database, poolSize = 4),
+          kafkaConfig
+        )
+      )
+    yield Pipeline(admin, pool, delivery.baseUri, deliveryConfig, ingest.baseUri, stats, redisUri)
