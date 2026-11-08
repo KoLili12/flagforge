@@ -2,8 +2,23 @@
 
 Feature flags & A/B testing platform written in Scala 3 on the Typelevel stack.
 
-> Pet project, work in progress. Stages 1–4 (control plane, evaluation engine, real-time delivery, SDK,
-> experiment analytics, containers, observability, load tests) are done; see the roadmap.
+Change a flag through the REST API, and every connected service sees it within tens of milliseconds over SSE.
+SDKs evaluate flags locally, report exposures and business events, and the platform tells you whether the
+experiment worked: z/Welch tests, confidence intervals, lift and sample-ratio-mismatch checks.
+
+- **Real-time delivery:** transactional outbox → Kafka → SSE, resumable from any instance via `Last-Event-ID`;
+  propagation p50 ≈ 5 ms inside the system, 1000 SDK clients updated with p99 88 ms.
+- **Analytics pipeline:** Redis rate limiting and dedup (Lua) → Kafka → Postgres, ~77 000 events/s ingest on
+  one instance; exactly-once effect built from at-least-once parts.
+- **Statistics from scratch**, cross-compiled to Scala.js and verified against scipy.
+- **Production-style operations:** Docker images, `docker compose` for the whole system, OpenTelemetry traces
+  that follow a flag change across services, a provisioned Grafana dashboard, load tests.
+- **181 tests:** unit and property tests on JVM and JS, end-to-end tests on real Postgres, Kafka and Redis.
+
+```bash
+sbt Docker/publishLocal && docker compose --profile apps --profile demo up -d --wait
+# Swagger UI: localhost:8080/docs · Grafana: localhost:3000 · simulated A/B test: docker compose logs -f simulator
+```
 
 ## Architecture
 
@@ -284,12 +299,15 @@ What the load tests found and fixed: ember's default limit of 1024 connections s
 ~1000 SDKs (now `MAX_CONNECTIONS`, default 20 000), and every patch was JSON-encoded once per client (now once
 per change).
 
-## Roadmap
+## Limitations and next steps
 
-| Stage | Scope | Status |
-|---|---|---|
-| 1 | Domain, evaluation engine, admin API over Postgres | ✅ |
-| 2 | Outbox relay → Kafka, `flag-delivery` with SSE + Redis warm starts, Scala SDK, end-to-end tests | ✅ |
-| 3 | Exposure tracking in the SDK, `event-ingest` (Redis dedup / rate limiting), `stats-engine` (z/t-tests, SRM) | ✅ |
-| 4 | Docker images, otel4s tracing and metrics, Grafana dashboards, traffic simulator, load tests | ✅ |
-| 5 | Sequential testing (mSPRT), CUPED, Laminar UI, Kubernetes | ⏳ |
+Known simplifications:
+- **No authentication.** The admin API trusts the `X-Actor` header for the audit log, and SDK endpoints are open.
+- **Experiment setup is passed per report request** (`control`, `weights` query parameters) instead of being
+  stored as an experiment entity.
+- **No Kafka consumer-lag metric** yet; stats-engine throughput is visible only through stored-event counters.
+- **The change feed is a single partition** by design (it gives a global order and offsets as versions). That is
+  plenty for flag changes, but it caps the write rate of the control plane.
+
+Next ideas: sequential testing (mSPRT) so experiments can be watched without peeking bias, CUPED variance
+reduction, a Laminar web UI reusing the Scala.js `eval-core`, Kubernetes manifests.
